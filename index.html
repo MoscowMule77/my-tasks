@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Tasks</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --text: #1d2330;
+    --muted: #8a93a6;
+    --accent: #4f6df5;
+    --accent-soft: #eaeefe;
+    --line: #e7e9ef;
+    --done: #aab2c2;
+    --danger: #e35d6a;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.4;
+  }
+  .wrap { max-width: 620px; margin: 0 auto; padding: 24px 18px 80px; }
+
+  header.app { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+  header.app h1 { font-size: 22px; margin: 0; letter-spacing: -0.3px; }
+  .who { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+  .link-btn { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 13px; padding: 0; }
+  .link-btn:hover { text-decoration: underline; }
+
+  /* Auth */
+  .auth-card {
+    background: var(--card); border-radius: var(--radius); padding: 28px;
+    box-shadow: 0 1px 3px rgba(20,30,60,.06); margin-top: 40px; text-align: center;
+  }
+  .auth-card h2 { margin: 0 0 6px; font-size: 20px; }
+  .auth-card p { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+  .auth-card input {
+    width: 100%; padding: 12px 14px; font-size: 15px; border: 1px solid var(--line);
+    border-radius: 10px; margin-bottom: 12px; outline: none;
+  }
+  .auth-card input:focus { border-color: var(--accent); }
+  .btn {
+    width: 100%; padding: 12px 14px; font-size: 15px; font-weight: 600;
+    background: var(--accent); color: #fff; border: none; border-radius: 10px; cursor: pointer;
+  }
+  .btn:hover { opacity: .92; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 14px; }
+  .note.ok { color: #2e9e6b; }
+  .note.err { color: var(--danger); }
+
+  /* Add row */
+  .add-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .add-row input {
+    flex: 1; padding: 12px 14px; font-size: 15px; border: 1px solid var(--line);
+    border-radius: 10px; outline: none; background: var(--card);
+  }
+  .add-row input:focus { border-color: var(--accent); }
+  .add-row select {
+    padding: 0 12px; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--card); font-size: 14px; color: var(--text); outline: none; max-width: 150px;
+  }
+  .add-row button.add {
+    padding: 0 18px; background: var(--accent); color: #fff; border: none;
+    border-radius: 10px; font-size: 20px; cursor: pointer; line-height: 1;
+  }
+
+  /* List chips + manage */
+  .lists-bar { display: flex; align-items: center; gap: 8px; margin: 16px 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; }
+  .chip {
+    padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--card); font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .chip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .manage-btn {
+    border: 1px solid var(--line); background: var(--card); color: var(--muted);
+    border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap;
+  }
+  .manage-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* Manage lists panel */
+  .panel {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px; margin-bottom: 16px;
+  }
+  .panel h3 { margin: 0 0 10px; font-size: 14px; }
+  .list-edit { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .list-edit input {
+    flex: 1; padding: 8px 10px; font-size: 14px; border: 1px solid var(--line);
+    border-radius: 8px; outline: none;
+  }
+  .list-edit input:focus { border-color: var(--accent); }
+  .icon-btn { background: none; border: none; cursor: pointer; font-size: 15px; color: var(--muted); padding: 4px 6px; }
+  .icon-btn:hover { color: var(--danger); }
+  .new-list-row { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .new-list-row input {
+    flex: 1; padding: 8px 10px; font-size: 14px; border: 1px solid var(--line); border-radius: 8px; outline: none;
+  }
+  .new-list-row button {
+    padding: 0 14px; background: var(--accent); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px;
+  }
+
+  /* Task list */
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .task {
+    display: flex; align-items: center; gap: 12px; background: var(--card);
+    border-radius: 12px; padding: 12px 14px; box-shadow: 0 1px 2px rgba(20,30,60,.04);
+  }
+  .check {
+    width: 22px; height: 22px; border-radius: 7px; border: 2px solid var(--line);
+    cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  }
+  .check.on { background: var(--accent); border-color: var(--accent); }
+  .check.on::after { content: "✓"; color: #fff; font-size: 14px; }
+  .task .title { flex: 1; font-size: 15px; }
+  .task.done .title { color: var(--done); text-decoration: line-through; }
+  .task .cat {
+    font-size: 11px; color: var(--muted); background: var(--bg);
+    padding: 3px 9px; border-radius: 999px; flex-shrink: 0;
+  }
+  .del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 17px; flex-shrink: 0; padding: 2px 4px; }
+  .del:hover { color: var(--danger); }
+
+  .empty { text-align: center; color: var(--muted); padding: 50px 20px; font-size: 14px; }
+  .hidden { display: none !important; }
+
+  .setup-banner {
+    background: #fff7e6; border: 1px solid #ffe2a8; color: #8a6100;
+    border-radius: 12px; padding: 14px 16px; font-size: 13px; margin-bottom: 18px;
+  }
+  .setup-banner code { background: #fff0cc; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===================== CONFIG ===================== -->
+  <!-- Paste your two Supabase values between the quotes below.
+       Find them in Supabase: Project Settings -> API.
+       (See the setup guide for step-by-step help.) -->
+  <script>
+    const SUPABASE_URL = "https://ulspfxvuoelojzrrwbnf.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVsc3BmeHZ1b2Vsb2p6cnJ3Ym5mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyOTY2MjksImV4cCI6MjA5Njg3MjYyOX0.0lo11zKoh_ZdQPq6PDrFy96Gm6TL7J-Q5CYRtTJcens";
+  </script>
+  <!-- ================================================= -->
+
+  <div id="setupBanner" class="setup-banner hidden">
+    ⚙️ <strong>Almost there.</strong> Open this file and paste your Supabase
+    <code>URL</code> and <code>anon key</code> into the CONFIG section near the top,
+    then reload. See the setup guide for help.
+  </div>
+
+  <header class="app hidden" id="appHeader">
+    <h1>My Tasks</h1>
+    <div class="who"><span id="whoEmail"></span><button class="link-btn" id="logoutBtn">Sign out</button></div>
+  </header>
+
+  <!-- Auth view -->
+  <div id="authView" class="hidden">
+    <div class="auth-card">
+      <h2>My Tasks</h2>
+      <p>Enter your email and we'll send you a secure sign-in link. No password needed.</p>
+      <input type="email" id="emailInput" placeholder="you@example.com" autocomplete="email">
+      <button class="btn" id="sendLinkBtn">Send me a sign-in link</button>
+      <div class="note" id="authNote"></div>
+    </div>
+  </div>
+
+  <!-- App view -->
+  <div id="appView" class="hidden">
+    <div class="add-row">
+      <input type="text" id="taskInput" placeholder="Add a task…">
+      <select id="catSelect"></select>
+      <button class="add" id="addBtn" title="Add">+</button>
+    </div>
+
+    <div class="lists-bar">
+      <div class="chips" id="chips"></div>
+      <button class="manage-btn" id="manageBtn">Edit lists</button>
+    </div>
+
+    <!-- Manage lists panel (hidden by default) -->
+    <div class="panel hidden" id="managePanel">
+      <h3>Your lists</h3>
+      <div id="listEdits"></div>
+      <div class="new-list-row">
+        <input type="text" id="newListInput" placeholder="New list name…">
+        <button id="addListBtn">Add</button>
+      </div>
+    </div>
+
+    <div class="list" id="list"></div>
+    <div class="empty hidden" id="empty">Nothing here yet. Add your first task above.</div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function () {
+  let supa = null;
+  let user = null;
+  let tasks = [];
+  let lists = [];           // [{id, name, ...}]
+  let activeFilter = "All"; // "All" or a list id
+  let managing = false;
+
+  const $ = (id) => document.getElementById(id);
+
+  // --- Check config ---
+  const configured = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length > 20;
+  if (!configured) {
+    $("setupBanner").classList.remove("hidden");
+    $("authView").classList.remove("hidden");
+    $("sendLinkBtn").disabled = true;
+    $("authNote").textContent = "Add your Supabase keys to enable sign-in.";
+    $("authNote").className = "note err";
+    return;
+  }
+
+  supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // --- Auth ---
+  async function init() {
+    const { data } = await supa.auth.getSession();
+    setUser(data.session ? data.session.user : null);
+    supa.auth.onAuthStateChange((_e, session) => setUser(session ? session.user : null));
+  }
+
+  function setUser(u) {
+    user = u;
+    if (user) {
+      $("authView").classList.add("hidden");
+      $("appView").classList.remove("hidden");
+      $("appHeader").classList.remove("hidden");
+      $("whoEmail").textContent = user.email;
+      loadAll();
+    } else {
+      $("authView").classList.remove("hidden");
+      $("appView").classList.add("hidden");
+      $("appHeader").classList.add("hidden");
+    }
+  }
+
+  $("sendLinkBtn").addEventListener("click", async () => {
+    const email = $("emailInput").value.trim();
+    const note = $("authNote");
+    if (!email) { note.textContent = "Please enter your email."; note.className = "note err"; return; }
+    $("sendLinkBtn").disabled = true;
+    note.textContent = "Sending…"; note.className = "note";
+    const { error } = await supa.auth.signInWithOtp({
+      email, options: { emailRedirectTo: window.location.href }
+    });
+    $("sendLinkBtn").disabled = false;
+    if (error) { note.textContent = error.message; note.className = "note err"; }
+    else { note.textContent = "Check your email for the sign-in link ✉️"; note.className = "note ok"; }
+  });
+
+  $("emailInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("sendLinkBtn").click(); });
+  $("logoutBtn").addEventListener("click", async () => { await supa.auth.signOut(); });
+
+  // --- Load lists + tasks ---
+  async function loadAll() {
+    await loadLists();
+    // First-time users get a starter list so the app is usable right away.
+    if (lists.length === 0) {
+      await createList("Personal", true);
+      await loadLists();
+    }
+    await loadTasks();
+  }
+
+  async function loadLists() {
+    const { data, error } = await supa
+      .from("lists").select("*").order("created_at", { ascending: true });
+    if (error) { console.error(error); return; }
+    lists = data || [];
+  }
+
+  async function loadTasks() {
+    const { data, error } = await supa
+      .from("todos").select("*").order("created_at", { ascending: false });
+    if (error) { console.error(error); return; }
+    tasks = data || [];
+    render();
+  }
+
+  // --- List operations ---
+  async function createList(name, silent) {
+    const clean = (name || "").trim();
+    if (!clean) return;
+    const { data, error } = await supa.from("lists").insert({ name: clean }).select().single();
+    if (error) { console.error(error); if (!silent) alert("Could not add list: " + error.message); return; }
+    lists.push(data);
+    if (!silent) render();
+  }
+
+  async function renameList(id, name) {
+    const clean = (name || "").trim();
+    if (!clean) return;
+    const l = lists.find((x) => x.id === id);
+    if (l) l.name = clean;
+    const { error } = await supa.from("lists").update({ name: clean }).eq("id", id);
+    if (error) { console.error(error); loadAll(); }
+  }
+
+  async function deleteList(id) {
+    const l = lists.find((x) => x.id === id);
+    const taskCount = tasks.filter((t) => t.list_id === id).length;
+    const msg = taskCount > 0
+      ? `Delete "${l ? l.name : "this list"}" and its ${taskCount} task(s)?`
+      : `Delete "${l ? l.name : "this list"}"?`;
+    if (!confirm(msg)) return;
+    lists = lists.filter((x) => x.id !== id);
+    tasks = tasks.filter((t) => t.list_id !== id); // server cascade-deletes these
+    if (activeFilter === id) activeFilter = "All";
+    render();
+    const { error } = await supa.from("lists").delete().eq("id", id);
+    if (error) { console.error(error); loadAll(); }
+  }
+
+  // --- Task operations ---
+  async function addTask() {
+    const input = $("taskInput");
+    const title = input.value.trim();
+    if (!title) return;
+    let listId = $("catSelect").value;
+    if (!listId && lists.length) listId = lists[0].id;
+    if (!listId) { alert("Create a list first."); return; }
+    input.value = "";
+    const { data, error } = await supa
+      .from("todos").insert({ title, list_id: listId, done: false }).select().single();
+    if (error) { console.error(error); alert("Could not add task: " + error.message); return; }
+    tasks.unshift(data);
+    render();
+  }
+
+  async function toggleTask(t) {
+    const newDone = !t.done;
+    t.done = newDone;
+    render();
+    const { error } = await supa.from("todos").update({ done: newDone }).eq("id", t.id);
+    if (error) { console.error(error); t.done = !newDone; render(); }
+  }
+
+  async function deleteTask(t) {
+    tasks = tasks.filter((x) => x.id !== t.id);
+    render();
+    const { error } = await supa.from("todos").delete().eq("id", t.id);
+    if (error) { console.error(error); loadTasks(); }
+  }
+
+  $("addBtn").addEventListener("click", addTask);
+  $("taskInput").addEventListener("keydown", (e) => { if (e.key === "Enter") addTask(); });
+
+  $("manageBtn").addEventListener("click", () => { managing = !managing; render(); });
+  $("addListBtn").addEventListener("click", async () => {
+    await createList($("newListInput").value);
+    $("newListInput").value = "";
+  });
+  $("newListInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("addListBtn").click(); });
+
+  function listName(id) {
+    const l = lists.find((x) => x.id === id);
+    return l ? l.name : "—";
+  }
+
+  // --- Render ---
+  function render() {
+    // category dropdown (for adding)
+    const sel = $("catSelect");
+    const prev = sel.value;
+    sel.innerHTML = "";
+    lists.forEach((l) => {
+      const o = document.createElement("option");
+      o.value = l.id; o.textContent = l.name;
+      sel.appendChild(o);
+    });
+    if (lists.some((l) => l.id === prev)) sel.value = prev;
+
+    // filter chips
+    const chips = $("chips");
+    chips.innerHTML = "";
+    const allChip = document.createElement("button");
+    allChip.className = "chip" + (activeFilter === "All" ? " active" : "");
+    allChip.textContent = "All";
+    allChip.addEventListener("click", () => { activeFilter = "All"; render(); });
+    chips.appendChild(allChip);
+    lists.forEach((l) => {
+      const el = document.createElement("button");
+      el.className = "chip" + (activeFilter === l.id ? " active" : "");
+      el.textContent = l.name;
+      el.addEventListener("click", () => { activeFilter = l.id; render(); });
+      chips.appendChild(el);
+    });
+
+    // manage panel
+    const panel = $("managePanel");
+    panel.classList.toggle("hidden", !managing);
+    if (managing) {
+      const box = $("listEdits");
+      box.innerHTML = "";
+      if (lists.length === 0) {
+        box.innerHTML = '<div style="color:var(--muted);font-size:13px;">No lists yet — add one below.</div>';
+      }
+      lists.forEach((l) => {
+        const row = document.createElement("div");
+        row.className = "list-edit";
+        const inp = document.createElement("input");
+        inp.value = l.name;
+        inp.addEventListener("change", () => renameList(l.id, inp.value));
+        inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
+        const del = document.createElement("button");
+        del.className = "icon-btn";
+        del.innerHTML = "🗑";
+        del.title = "Delete list";
+        del.addEventListener("click", () => deleteList(l.id));
+        row.append(inp, del);
+        box.appendChild(row);
+      });
+    }
+
+    // task list
+    const list = $("list");
+    list.innerHTML = "";
+    const visible = tasks.filter((t) => activeFilter === "All" || t.list_id === activeFilter);
+    $("empty").classList.toggle("hidden", visible.length > 0);
+
+    visible.forEach((t) => {
+      const row = document.createElement("div");
+      row.className = "task" + (t.done ? " done" : "");
+
+      const check = document.createElement("div");
+      check.className = "check" + (t.done ? " on" : "");
+      check.addEventListener("click", () => toggleTask(t));
+
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = t.title;
+
+      const cat = document.createElement("span");
+      cat.className = "cat";
+      cat.textContent = listName(t.list_id);
+
+      const del = document.createElement("button");
+      del.className = "del";
+      del.innerHTML = "✕";
+      del.title = "Delete";
+      del.addEventListener("click", () => deleteTask(t));
+
+      row.append(check, title, cat, del);
+      list.appendChild(row);
+    });
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
