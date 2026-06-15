@@ -166,9 +166,11 @@
   <div id="authView" class="hidden">
     <div class="auth-card">
       <h2>My Tasks</h2>
-      <p>Enter your email and we'll send you a secure sign-in link. No password needed.</p>
+      <p>Sign in, or create an account to get started.</p>
       <input type="email" id="emailInput" placeholder="you@example.com" autocomplete="email">
-      <button class="btn" id="sendLinkBtn">Send me a sign-in link</button>
+      <input type="password" id="passwordInput" placeholder="Password (6+ characters)" autocomplete="current-password">
+      <button class="btn" id="signInBtn">Sign in</button>
+      <button class="link-btn" id="createBtn" style="margin-top:14px;">Create an account</button>
       <div class="note" id="authNote"></div>
     </div>
   </div>
@@ -249,21 +251,45 @@
     }
   }
 
-  $("sendLinkBtn").addEventListener("click", async () => {
+  async function doSignIn() {
     const email = $("emailInput").value.trim();
+    const password = $("passwordInput").value;
     const note = $("authNote");
-    if (!email) { note.textContent = "Please enter your email."; note.className = "note err"; return; }
-    $("sendLinkBtn").disabled = true;
-    note.textContent = "Sending…"; note.className = "note";
-    const { error } = await supa.auth.signInWithOtp({
-      email, options: { emailRedirectTo: window.location.href }
-    });
-    $("sendLinkBtn").disabled = false;
-    if (error) { note.textContent = error.message; note.className = "note err"; }
-    else { note.textContent = "Check your email for the sign-in link ✉️"; note.className = "note ok"; }
-  });
+    if (!email || !password) { note.textContent = "Enter your email and password."; note.className = "note err"; return; }
+    $("signInBtn").disabled = true;
+    note.textContent = "Signing in…"; note.className = "note";
+    const { error } = await supa.auth.signInWithPassword({ email, password });
+    $("signInBtn").disabled = false;
+    if (error) {
+      note.textContent = error.message.includes("Invalid login")
+        ? "Wrong email or password. New here? Tap \"Create an account\"."
+        : error.message;
+      note.className = "note err";
+    }
+  }
 
-  $("emailInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("sendLinkBtn").click(); });
+  async function doSignUp() {
+    const email = $("emailInput").value.trim();
+    const password = $("passwordInput").value;
+    const note = $("authNote");
+    if (!email || !password) { note.textContent = "Enter an email and a password (6+ characters)."; note.className = "note err"; return; }
+    if (password.length < 6) { note.textContent = "Password must be at least 6 characters."; note.className = "note err"; return; }
+    $("createBtn").disabled = true;
+    note.textContent = "Creating your account…"; note.className = "note";
+    const { data, error } = await supa.auth.signUp({ email, password });
+    $("createBtn").disabled = false;
+    if (error) { note.textContent = error.message; note.className = "note err"; return; }
+    if (!data.session) {
+      note.textContent = "Account created — now tap \"Sign in\".";
+      note.className = "note ok";
+    }
+    // If a session is returned (email confirmation off), onAuthStateChange logs you straight in.
+  }
+
+  $("signInBtn").addEventListener("click", doSignIn);
+  $("createBtn").addEventListener("click", doSignUp);
+  $("passwordInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doSignIn(); });
+  $("emailInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("passwordInput").focus(); });
   $("logoutBtn").addEventListener("click", async () => { await supa.auth.signOut(); });
 
   // --- Load lists + tasks ---
