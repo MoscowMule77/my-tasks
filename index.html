@@ -176,6 +176,14 @@
   .check { border-color: var(--accent); opacity: .8; }
   .check.on { opacity: 1; }
   .col-head .grip { color: var(--line); font-size: 13px; flex-shrink: 0; }
+  .collapse-btn { font-size: 10px; padding: 0 2px; flex-shrink: 0; }
+  .column.collapsed { width: 48px; min-width: 48px; cursor: pointer; }
+  .column.collapsed .col-head { flex-direction: column; align-items: center; height: 100%; min-height: 150px; padding: 12px 4px; gap: 12px; cursor: pointer; }
+  .column.collapsed .grip { display: none; }
+  .column.collapsed .col-name {
+    writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap;
+    overflow: visible; text-overflow: clip; max-width: none; flex: 0 0 auto;
+  }
   .col-cards { display: flex; flex-direction: column; gap: 8px; padding: 4px 10px 6px; overflow-y: auto; flex: 1; min-height: 8px; }
   .col-empty { color: var(--muted); font-size: 13px; padding: 10px 4px; text-align: center; }
   .card {
@@ -333,6 +341,7 @@
   let searchQuery = "";
   let sortMode = "manual"; // "manual" or "due"
   const expanded = new Set(); // task ids whose notes are open
+  const collapsed = new Set(); // list ids that are collapsed
 
   const $ = (id) => document.getElementById(id);
 
@@ -723,6 +732,20 @@
     if (s === "due" || s === "manual") sortMode = s;
   })();
 
+  // Restore which columns are collapsed (a per-device view preference).
+  (function loadCollapsed() {
+    try {
+      const a = JSON.parse(localStorage.getItem("mytasks-collapsed"));
+      if (Array.isArray(a)) a.forEach((id) => collapsed.add(id));
+    } catch (e) { /* ignore */ }
+  })();
+
+  function toggleCollapse(id) {
+    if (collapsed.has(id)) collapsed.delete(id); else collapsed.add(id);
+    localStorage.setItem("mytasks-collapsed", JSON.stringify([...collapsed]));
+    render();
+  }
+
   $("manageBtn").addEventListener("click", () => { managing = !managing; render(); });
   $("themeBtn").addEventListener("click", () => {
     themeOpen = !themeOpen;
@@ -795,8 +818,10 @@
     else badge.classList.add("hidden");
 
     lists.forEach((l) => {
+      const isCollapsed = collapsed.has(l.id);
       const col = document.createElement("div");
-      col.className = "column";
+      col.className = "column" + (isCollapsed ? " collapsed" : "");
+      if (isCollapsed) col.addEventListener("click", () => toggleCollapse(l.id));
       // Accept dropped cards (move task here) and dropped columns (reorder).
       col.addEventListener("dragover", (e) => { e.preventDefault(); col.classList.add("drop-target"); });
       col.addEventListener("dragleave", () => col.classList.remove("drop-target"));
@@ -818,6 +843,11 @@
       head.draggable = true;
       head.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", "col:" + l.id); e.dataTransfer.effectAllowed = "move"; head.classList.add("dragging"); });
       head.addEventListener("dragend", () => head.classList.remove("dragging"));
+      const collapseBtn = document.createElement("button");
+      collapseBtn.className = "icon-btn collapse-btn";
+      collapseBtn.innerHTML = isCollapsed ? "▸" : "▾";
+      collapseBtn.title = isCollapsed ? "Expand list" : "Collapse list";
+      collapseBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleCollapse(l.id); });
       const grip = document.createElement("span"); grip.className = "grip"; grip.textContent = "⠿";
       const name = document.createElement("span"); name.className = "col-name"; name.textContent = l.name;
       const allColTasks = displayTasks(l.id);
@@ -825,7 +855,14 @@
         ? allColTasks.filter((t) => t.title.toLowerCase().includes(searchQuery))
         : allColTasks;
       const count = document.createElement("span"); count.className = "col-count"; count.textContent = colTasks.length;
-      head.append(grip, name, count);
+      head.append(collapseBtn, grip, name, count);
+
+      // Collapsed columns show only the header strip.
+      if (isCollapsed) {
+        col.appendChild(head);
+        board.appendChild(col);
+        return;
+      }
 
       // Cards
       const cards = document.createElement("div");
