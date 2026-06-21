@@ -163,7 +163,7 @@
   /* Board (kanban) */
   .board { display: flex; gap: 14px; align-items: flex-start; overflow-x: auto; padding-bottom: 12px; }
   .column {
-    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 14px;
     width: 270px; min-width: 270px; display: flex; flex-direction: column;
     max-height: calc(100vh - 170px);
   }
@@ -172,7 +172,9 @@
   .col-head:active { cursor: grabbing; }
   .col-head.dragging { opacity: .5; }
   .col-head .col-name { font-weight: 600; font-size: 15px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .col-head .col-count { font-size: 12px; color: var(--muted); background: var(--bg); border-radius: 999px; padding: 1px 9px; flex-shrink: 0; }
+  .col-head .col-count { font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 9px; flex-shrink: 0; }
+  .check { border-color: var(--accent); opacity: .8; }
+  .check.on { opacity: 1; }
   .col-head .grip { color: var(--line); font-size: 13px; flex-shrink: 0; }
   .col-cards { display: flex; flex-direction: column; gap: 8px; padding: 4px 10px 6px; overflow-y: auto; flex: 1; min-height: 8px; }
   .col-empty { color: var(--muted); font-size: 13px; padding: 10px 4px; text-align: center; }
