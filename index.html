@@ -25,9 +25,10 @@
     color: var(--text);
     line-height: 1.4;
   }
-  .wrap { max-width: 620px; margin: 0 auto; padding: 24px 18px 80px; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 24px 18px 40px; }
+  .auth-wrap { max-width: 620px; margin: 0 auto; }
 
-  header.app { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+  header.app { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
   header.app h1 { font-size: 22px; margin: 0; letter-spacing: -0.3px; }
   .who { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
   .link-btn { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 13px; padding: 0; }
@@ -36,7 +37,7 @@
   /* Auth */
   .auth-card {
     background: var(--card); border-radius: var(--radius); padding: 28px;
-    box-shadow: 0 1px 3px rgba(20,30,60,.06); margin-top: 40px; text-align: center;
+    box-shadow: 0 1px 3px rgba(20,30,60,.06); margin: 40px auto 0; max-width: 520px; text-align: center;
   }
   .auth-card h2 { margin: 0 0 6px; font-size: 20px; }
   .auth-card p { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
@@ -142,6 +143,53 @@
   .empty { text-align: center; color: var(--muted); padding: 50px 20px; font-size: 14px; }
   .hidden { display: none !important; }
 
+  /* Toolbar */
+  .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+
+  /* Board (kanban) */
+  .board { display: flex; gap: 14px; align-items: flex-start; overflow-x: auto; padding-bottom: 12px; }
+  .column {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    width: 270px; min-width: 270px; display: flex; flex-direction: column;
+    max-height: calc(100vh - 170px);
+  }
+  .column.drop-target { border-color: var(--accent); border-style: dashed; }
+  .col-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; cursor: grab; }
+  .col-head:active { cursor: grabbing; }
+  .col-head.dragging { opacity: .5; }
+  .col-head .col-name { font-weight: 600; font-size: 15px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .col-head .col-count { font-size: 12px; color: var(--muted); background: var(--bg); border-radius: 999px; padding: 1px 9px; flex-shrink: 0; }
+  .col-head .grip { color: var(--line); font-size: 13px; flex-shrink: 0; }
+  .col-cards { display: flex; flex-direction: column; gap: 8px; padding: 4px 10px 6px; overflow-y: auto; flex: 1; min-height: 8px; }
+  .col-empty { color: var(--muted); font-size: 13px; padding: 10px 4px; text-align: center; }
+  .card {
+    display: flex; flex-direction: column; gap: 7px; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 11px; cursor: grab;
+  }
+  .card:active { cursor: grabbing; }
+  .card.dragging { opacity: .5; }
+  .card-main { display: flex; align-items: flex-start; gap: 10px; }
+  .card .check { width: 20px; height: 20px; margin-top: 1px; }
+  .card .title { flex: 1; font-size: 14px; }
+  .card.done .title { color: var(--done); text-decoration: line-through; }
+  .card .del { font-size: 15px; margin-top: -1px; }
+  .move-select {
+    align-self: flex-start; font-size: 11px; color: var(--muted); background: var(--card);
+    border: 1px solid var(--line); border-radius: 7px; padding: 2px 5px; cursor: pointer; outline: none; max-width: 100%;
+  }
+  .move-select:hover { border-color: var(--accent); color: var(--accent); }
+  .col-add { padding: 6px 10px 12px; }
+  .col-add input {
+    width: 100%; padding: 9px 11px; font-size: 14px; border: 1px solid var(--line);
+    border-radius: 9px; outline: none; background: var(--card);
+  }
+  .col-add input:focus { border-color: var(--accent); }
+  .add-column-btn {
+    min-width: 200px; align-self: stretch; border: 1.5px dashed var(--line); background: transparent;
+    color: var(--muted); border-radius: 14px; padding: 14px; cursor: pointer; font-size: 14px; white-space: nowrap;
+  }
+  .add-column-btn:hover { border-color: var(--accent); color: var(--accent); }
+
   .setup-banner {
     background: #fff7e6; border: 1px solid #ffe2a8; color: #8a6100;
     border-radius: 12px; padding: 14px 16px; font-size: 13px; margin-bottom: 18px;
@@ -188,14 +236,7 @@
 
   <!-- App view -->
   <div id="appView" class="hidden">
-    <div class="add-row">
-      <input type="text" id="taskInput" placeholder="Add a task…">
-      <select id="catSelect"></select>
-      <button class="add" id="addBtn" title="Add">+</button>
-    </div>
-
-    <div class="lists-bar">
-      <div class="chips" id="chips"></div>
+    <div class="toolbar">
       <button class="manage-btn" id="manageBtn">Edit lists</button>
     </div>
 
@@ -209,8 +250,8 @@
       </div>
     </div>
 
-    <div class="list" id="list"></div>
-    <div class="empty hidden" id="empty">Nothing here yet. Add your first task above.</div>
+    <!-- Kanban board: one column per list -->
+    <div class="board" id="board"></div>
   </div>
 
 </div>
@@ -398,19 +439,18 @@
   }
 
   // --- Task operations ---
-  async function addTask() {
-    const input = $("taskInput");
-    const title = input.value.trim();
-    if (!title) return;
-    let listId = $("catSelect").value;
-    if (!listId && lists.length) listId = lists[0].id;
-    if (!listId) { alert("Create a list first."); return; }
-    input.value = "";
+  async function addTaskToList(listId, inputEl) {
+    const title = inputEl.value.trim();
+    if (!title || !listId) return;
+    inputEl.value = "";
     const { data, error } = await supa
       .from("todos").insert({ title, list_id: listId, done: false }).select().single();
     if (error) { console.error(error); alert("Could not add task: " + error.message); return; }
     tasks.unshift(data);
     render();
+    // keep focus in the same column's input for fast entry
+    const again = document.querySelector('.col-add input[data-list="' + listId + '"]');
+    if (again) again.focus();
   }
 
   async function toggleTask(t) {
@@ -438,9 +478,6 @@
     if (error) { console.error(error); t.list_id = prev; render(); alert("Could not move task: " + error.message); }
   }
 
-  $("addBtn").addEventListener("click", addTask);
-  $("taskInput").addEventListener("keydown", (e) => { if (e.key === "Enter") addTask(); });
-
   $("manageBtn").addEventListener("click", () => { managing = !managing; render(); });
   $("addListBtn").addEventListener("click", async () => {
     await createList($("newListInput").value);
@@ -455,111 +492,151 @@
 
   // --- Render ---
   function render() {
-    // category dropdown (for adding)
-    const sel = $("catSelect");
-    const prev = sel.value;
-    sel.innerHTML = "";
-    lists.forEach((l) => {
-      const o = document.createElement("option");
-      o.value = l.id; o.textContent = l.name;
-      sel.appendChild(o);
-    });
-    if (lists.some((l) => l.id === prev)) sel.value = prev;
+    renderManagePanel();
+    renderBoard();
+  }
 
-    // filter chips
-    const chips = $("chips");
-    chips.innerHTML = "";
-    const allChip = document.createElement("button");
-    allChip.className = "chip" + (activeFilter === "All" ? " active" : "");
-    allChip.textContent = "All";
-    allChip.addEventListener("click", () => { activeFilter = "All"; render(); });
-    chips.appendChild(allChip);
-    lists.forEach((l) => {
-      const el = document.createElement("button");
-      el.className = "chip" + (activeFilter === l.id ? " active" : "");
-      el.textContent = l.name;
-      el.draggable = true;
-      el.addEventListener("click", () => { activeFilter = l.id; render(); });
-      el.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", l.id); e.dataTransfer.effectAllowed = "move"; el.classList.add("dragging"); });
-      el.addEventListener("dragend", () => el.classList.remove("dragging"));
-      el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("drop-target"); });
-      el.addEventListener("dragleave", () => el.classList.remove("drop-target"));
-      el.addEventListener("drop", (e) => { e.preventDefault(); el.classList.remove("drop-target"); reorderListByDrag(e.dataTransfer.getData("text/plain"), l.id); });
-      chips.appendChild(el);
-    });
-
-    // manage panel
+  function renderManagePanel() {
     const panel = $("managePanel");
     panel.classList.toggle("hidden", !managing);
-    if (managing) {
-      const box = $("listEdits");
-      box.innerHTML = "";
-      if (lists.length === 0) {
-        box.innerHTML = '<div style="color:var(--muted);font-size:13px;">No lists yet — add one below.</div>';
-      }
-      lists.forEach((l, idx) => {
-        const row = document.createElement("div");
-        row.className = "list-edit";
-        const up = document.createElement("button");
-        up.className = "icon-btn"; up.innerHTML = "▲"; up.title = "Move up";
-        up.disabled = idx === 0;
-        up.addEventListener("click", () => moveList(l.id, -1));
-        const down = document.createElement("button");
-        down.className = "icon-btn"; down.innerHTML = "▼"; down.title = "Move down";
-        down.disabled = idx === lists.length - 1;
-        down.addEventListener("click", () => moveList(l.id, 1));
-        const inp = document.createElement("input");
-        inp.value = l.name;
-        inp.addEventListener("change", () => renameList(l.id, inp.value));
-        inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
-        const del = document.createElement("button");
-        del.className = "icon-btn";
-        del.innerHTML = "🗑";
-        del.title = "Delete list";
-        del.addEventListener("click", () => deleteList(l.id));
-        row.append(up, down, inp, del);
-        box.appendChild(row);
-      });
+    if (!managing) return;
+    const box = $("listEdits");
+    box.innerHTML = "";
+    if (lists.length === 0) {
+      box.innerHTML = '<div style="color:var(--muted);font-size:13px;">No lists yet — add one below.</div>';
     }
-
-    // task list
-    const list = $("list");
-    list.innerHTML = "";
-    const visible = tasks.filter((t) => activeFilter === "All" || t.list_id === activeFilter);
-    $("empty").classList.toggle("hidden", visible.length > 0);
-
-    visible.forEach((t) => {
+    lists.forEach((l, idx) => {
       const row = document.createElement("div");
-      row.className = "task" + (t.done ? " done" : "");
-
-      const check = document.createElement("div");
-      check.className = "check" + (t.done ? " on" : "");
-      check.addEventListener("click", () => toggleTask(t));
-
-      const title = document.createElement("div");
-      title.className = "title";
-      title.textContent = t.title;
-
-      const cat = document.createElement("select");
-      cat.className = "cat-select";
-      cat.title = "Move to another list";
-      lists.forEach((l) => {
-        const o = document.createElement("option");
-        o.value = l.id; o.textContent = l.name;
-        if (l.id === t.list_id) o.selected = true;
-        cat.appendChild(o);
-      });
-      cat.addEventListener("change", () => reassignTask(t, cat.value));
-
+      row.className = "list-edit";
+      const up = document.createElement("button");
+      up.className = "icon-btn"; up.innerHTML = "▲"; up.title = "Move up";
+      up.disabled = idx === 0;
+      up.addEventListener("click", () => moveList(l.id, -1));
+      const down = document.createElement("button");
+      down.className = "icon-btn"; down.innerHTML = "▼"; down.title = "Move down";
+      down.disabled = idx === lists.length - 1;
+      down.addEventListener("click", () => moveList(l.id, 1));
+      const inp = document.createElement("input");
+      inp.value = l.name;
+      inp.addEventListener("change", () => renameList(l.id, inp.value));
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
       const del = document.createElement("button");
-      del.className = "del";
-      del.innerHTML = "✕";
-      del.title = "Delete";
-      del.addEventListener("click", () => deleteTask(t));
-
-      row.append(check, title, cat, del);
-      list.appendChild(row);
+      del.className = "icon-btn";
+      del.innerHTML = "🗑";
+      del.title = "Delete list";
+      del.addEventListener("click", () => deleteList(l.id));
+      row.append(up, down, inp, del);
+      box.appendChild(row);
     });
+  }
+
+  function renderBoard() {
+    const board = $("board");
+    board.innerHTML = "";
+
+    lists.forEach((l) => {
+      const col = document.createElement("div");
+      col.className = "column";
+      // Accept dropped cards (move task here) and dropped columns (reorder).
+      col.addEventListener("dragover", (e) => { e.preventDefault(); col.classList.add("drop-target"); });
+      col.addEventListener("dragleave", () => col.classList.remove("drop-target"));
+      col.addEventListener("drop", (e) => {
+        e.preventDefault();
+        col.classList.remove("drop-target");
+        const data = e.dataTransfer.getData("text/plain");
+        if (data.startsWith("card:")) {
+          const t = tasks.find((x) => x.id === data.slice(5));
+          if (t) reassignTask(t, l.id);
+        } else if (data.startsWith("col:")) {
+          reorderListByDrag(data.slice(4), l.id);
+        }
+      });
+
+      // Header (drag handle for reordering columns)
+      const head = document.createElement("div");
+      head.className = "col-head";
+      head.draggable = true;
+      head.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", "col:" + l.id); e.dataTransfer.effectAllowed = "move"; head.classList.add("dragging"); });
+      head.addEventListener("dragend", () => head.classList.remove("dragging"));
+      const grip = document.createElement("span"); grip.className = "grip"; grip.textContent = "⠿";
+      const name = document.createElement("span"); name.className = "col-name"; name.textContent = l.name;
+      const colTasks = tasks.filter((t) => t.list_id === l.id);
+      const count = document.createElement("span"); count.className = "col-count"; count.textContent = colTasks.length;
+      head.append(grip, name, count);
+
+      // Cards
+      const cards = document.createElement("div");
+      cards.className = "col-cards";
+      if (colTasks.length === 0) {
+        const e = document.createElement("div"); e.className = "col-empty"; e.textContent = "No tasks yet";
+        cards.appendChild(e);
+      }
+      colTasks.forEach((t) => {
+        const card = document.createElement("div");
+        card.className = "card" + (t.done ? " done" : "");
+        card.draggable = true;
+        card.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", "card:" + t.id); e.dataTransfer.effectAllowed = "move"; e.stopPropagation(); card.classList.add("dragging"); });
+        card.addEventListener("dragend", () => card.classList.remove("dragging"));
+
+        const main = document.createElement("div");
+        main.className = "card-main";
+        const check = document.createElement("div");
+        check.className = "check" + (t.done ? " on" : "");
+        check.addEventListener("click", () => toggleTask(t));
+        const title = document.createElement("div");
+        title.className = "title";
+        title.textContent = t.title;
+        const del = document.createElement("button");
+        del.className = "del";
+        del.innerHTML = "✕";
+        del.title = "Delete";
+        del.addEventListener("click", () => deleteTask(t));
+        main.append(check, title, del);
+        card.appendChild(main);
+
+        // Mobile-friendly move control (drag works on desktop).
+        if (lists.length > 1) {
+          const mv = document.createElement("select");
+          mv.className = "move-select";
+          mv.title = "Move to another list";
+          const ph = document.createElement("option");
+          ph.value = ""; ph.textContent = "Move to…";
+          mv.appendChild(ph);
+          lists.filter((x) => x.id !== l.id).forEach((x) => {
+            const o = document.createElement("option");
+            o.value = x.id; o.textContent = "→ " + x.name;
+            mv.appendChild(o);
+          });
+          mv.addEventListener("change", () => { if (mv.value) reassignTask(t, mv.value); });
+          card.appendChild(mv);
+        }
+
+        cards.appendChild(card);
+      });
+
+      // Add-task input for this column
+      const addWrap = document.createElement("div");
+      addWrap.className = "col-add";
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.placeholder = "+ Add a task";
+      inp.setAttribute("data-list", l.id);
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") addTaskToList(l.id, inp); });
+      addWrap.appendChild(inp);
+
+      col.append(head, cards, addWrap);
+      board.appendChild(col);
+    });
+
+    // "Add list" button at the end of the board
+    const addCol = document.createElement("button");
+    addCol.className = "add-column-btn";
+    addCol.textContent = "+ Add list";
+    addCol.addEventListener("click", async () => {
+      const name = prompt("New list name:");
+      if (name && name.trim()) await createList(name);
+    });
+    board.appendChild(addCol);
   }
 
   init();
