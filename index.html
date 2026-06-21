@@ -150,6 +150,15 @@
     border: 1px solid var(--line); border-radius: 999px; outline: none; background: var(--card); color: var(--text);
   }
   .search:focus { border-color: var(--accent); }
+  .overdue-badge {
+    background: var(--danger); color: #fff; font-size: 12px; font-weight: 600;
+    padding: 4px 11px; border-radius: 999px; white-space: nowrap;
+  }
+  .sort-select {
+    padding: 7px 10px; font-size: 13px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card); color: var(--muted); outline: none; cursor: pointer;
+  }
+  .sort-select:hover { border-color: var(--accent); color: var(--accent); }
 
   /* Board (kanban) */
   .board { display: flex; gap: 14px; align-items: flex-start; overflow-x: auto; padding-bottom: 12px; }
@@ -175,8 +184,15 @@
   .card.dragging { opacity: .5; }
   .card-main { display: flex; align-items: flex-start; gap: 10px; }
   .card .check { width: 20px; height: 20px; margin-top: 1px; }
-  .card .title { flex: 1; font-size: 14px; }
+  .card .title { flex: 1; font-size: 14px; cursor: pointer; }
   .card.done .title { color: var(--done); text-decoration: line-through; }
+  .note-dot { font-size: 11px; flex-shrink: 0; opacity: .65; cursor: pointer; }
+  .notes {
+    width: 100%; min-height: 54px; resize: vertical; font: inherit; font-size: 13px;
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; outline: none;
+    background: var(--card); color: var(--text); box-sizing: border-box;
+  }
+  .notes:focus { border-color: var(--accent); }
   .card .del { font-size: 15px; margin-top: -1px; }
   .card.card-drop { border-color: var(--accent); border-style: dashed; }
   .card-foot { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
@@ -267,6 +283,11 @@
   <div id="appView" class="hidden">
     <div class="toolbar">
       <input type="text" id="searchInput" class="search" placeholder="🔍 Search tasks…" autocomplete="off">
+      <span id="overdueBadge" class="overdue-badge hidden"></span>
+      <select id="sortSelect" class="sort-select" title="Sort tasks">
+        <option value="manual">Sort: Manual</option>
+        <option value="due">Sort: Due date</option>
+      </select>
       <button class="manage-btn" id="manageBtn">Edit lists</button>
       <button class="manage-btn" id="themeBtn">🎨 Theme</button>
     </div>
@@ -308,6 +329,8 @@
   let managing = false;
   let themeOpen = false;
   let searchQuery = "";
+  let sortMode = "manual"; // "manual" or "due"
+  const expanded = new Set(); // task ids whose notes are open
 
   const $ = (id) => document.getElementById(id);
 
@@ -667,6 +690,37 @@
     return "";
   }
 
+  // Save a task's notes.
+  async function setNotes(t, value) {
+    const notes = value.trim() || null;
+    t.notes = notes;
+    const { error } = await supa.from("todos").update({ notes }).eq("id", t.id);
+    if (error) console.error(error);
+  }
+
+  // Tasks of a list in the current display order (manual position, or by due date).
+  function displayTasks(listId) {
+    const arr = listTasks(listId);
+    if (sortMode !== "due") return arr;
+    return arr.slice().sort((a, b) => {
+      if (a.due_date && b.due_date) return a.due_date < b.due_date ? -1 : (a.due_date > b.due_date ? 1 : 0);
+      if (a.due_date) return -1;
+      if (b.due_date) return 1;
+      return 0;
+    });
+  }
+
+  // Number of overdue, not-done tasks across all lists.
+  function overdueCount() {
+    return tasks.filter((t) => !t.done && dueStatus(t.due_date) === "overdue").length;
+  }
+
+  // Restore saved sort preference.
+  (function loadSort() {
+    const s = localStorage.getItem("mytasks-sort");
+    if (s === "due" || s === "manual") sortMode = s;
+  })();
+
   $("manageBtn").addEventListener("click", () => { managing = !managing; render(); });
   $("themeBtn").addEventListener("click", () => {
     themeOpen = !themeOpen;
@@ -675,6 +729,7 @@
   });
   $("accentPicker").addEventListener("input", (e) => setCustomAccent(e.target.value));
   $("searchInput").addEventListener("input", (e) => { searchQuery = e.target.value.trim().toLowerCase(); renderBoard(); });
+  $("sortSelect").addEventListener("change", (e) => { sortMode = e.target.value; localStorage.setItem("mytasks-sort", sortMode); renderBoard(); });
   $("addListBtn").addEventListener("click", async () => {
     await createList($("newListInput").value);
     $("newListInput").value = "";
@@ -730,6 +785,13 @@
     const board = $("board");
     board.innerHTML = "";
 
+    // Toolbar state: sort selection + overdue badge.
+    $("sortSelect").value = sortMode;
+    const oc = overdueCount();
+    const badge = $("overdueBadge");
+    if (oc > 0) { badge.textContent = "⚠ " + oc + " overdue"; badge.classList.remove("hidden"); }
+    else badge.classList.add("hidden");
+
     lists.forEach((l) => {
       const col = document.createElement("div");
       col.className = "column";
@@ -756,7 +818,7 @@
       head.addEventListener("dragend", () => head.classList.remove("dragging"));
       const grip = document.createElement("span"); grip.className = "grip"; grip.textContent = "⠿";
       const name = document.createElement("span"); name.className = "col-name"; name.textContent = l.name;
-      const allColTasks = listTasks(l.id);
+      const allColTasks = displayTasks(l.id);
       const colTasks = searchQuery
         ? allColTasks.filter((t) => t.title.toLowerCase().includes(searchQuery))
         : allColTasks;
@@ -795,26 +857,50 @@
         const title = document.createElement("div");
         title.className = "title";
         title.textContent = t.title;
+        title.title = "Click to add notes";
+        const toggleNotes = () => { if (expanded.has(t.id)) expanded.delete(t.id); else expanded.add(t.id); render(); };
+        title.addEventListener("click", toggleNotes);
         const del = document.createElement("button");
         del.className = "del";
         del.innerHTML = "✕";
         del.title = "Delete";
         del.addEventListener("click", () => deleteTask(t));
-        main.append(check, title, del);
+        main.append(check, title);
+        if (t.notes) {
+          const dot = document.createElement("span");
+          dot.className = "note-dot"; dot.textContent = "🗒"; dot.title = "Has notes";
+          dot.addEventListener("click", toggleNotes);
+          main.appendChild(dot);
+        }
+        main.appendChild(del);
         card.appendChild(main);
 
-        // Footer: up/down reorder + (when >1 list) a move-to menu.
+        // Notes (shown when the card is expanded)
+        if (expanded.has(t.id)) {
+          const ta = document.createElement("textarea");
+          ta.className = "notes";
+          ta.placeholder = "Notes…";
+          ta.value = t.notes || "";
+          ta.draggable = false;
+          ta.addEventListener("mousedown", (e) => e.stopPropagation());
+          ta.addEventListener("change", () => setNotes(t, ta.value));
+          card.appendChild(ta);
+        }
+
+        // Footer: up/down reorder (manual sort only) + (when >1 list) a move-to menu.
         const foot = document.createElement("div");
         foot.className = "card-foot";
-        const up = document.createElement("button");
-        up.className = "icon-btn"; up.innerHTML = "▲"; up.title = "Move up";
-        up.disabled = ti === 0;
-        up.addEventListener("click", () => moveTaskWithinList(t, -1));
-        const down = document.createElement("button");
-        down.className = "icon-btn"; down.innerHTML = "▼"; down.title = "Move down";
-        down.disabled = ti === colTasks.length - 1;
-        down.addEventListener("click", () => moveTaskWithinList(t, 1));
-        foot.append(up, down);
+        if (sortMode === "manual" && !searchQuery) {
+          const up = document.createElement("button");
+          up.className = "icon-btn"; up.innerHTML = "▲"; up.title = "Move up";
+          up.disabled = ti === 0;
+          up.addEventListener("click", () => moveTaskWithinList(t, -1));
+          const down = document.createElement("button");
+          down.className = "icon-btn"; down.innerHTML = "▼"; down.title = "Move down";
+          down.disabled = ti === colTasks.length - 1;
+          down.addEventListener("click", () => moveTaskWithinList(t, 1));
+          foot.append(up, down);
+        }
 
         // Due date
         const due = document.createElement("input");
