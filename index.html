@@ -173,11 +173,23 @@
   .card .title { flex: 1; font-size: 14px; }
   .card.done .title { color: var(--done); text-decoration: line-through; }
   .card .del { font-size: 15px; margin-top: -1px; }
+  .card.card-drop { border-color: var(--accent); border-style: dashed; }
+  .card-foot { display: flex; align-items: center; gap: 4px; }
+  .card-foot .icon-btn { font-size: 11px; padding: 1px 4px; }
   .move-select {
-    align-self: flex-start; font-size: 11px; color: var(--muted); background: var(--card);
-    border: 1px solid var(--line); border-radius: 7px; padding: 2px 5px; cursor: pointer; outline: none; max-width: 100%;
+    margin-left: auto; font-size: 11px; color: var(--muted); background: var(--card);
+    border: 1px solid var(--line); border-radius: 7px; padding: 2px 5px; cursor: pointer; outline: none; max-width: 70%;
   }
   .move-select:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Theme picker */
+  .swatches { display: flex; flex-wrap: wrap; gap: 12px; }
+  .swatch { display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; font-size: 11px; color: var(--muted); width: 58px; background: none; border: none; }
+  .swatch .dot { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--line); }
+  .swatch.active { color: var(--text); font-weight: 600; }
+  .swatch.active .dot { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--accent); }
+  .custom-accent { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+  .custom-accent input[type="color"] { width: 40px; height: 30px; border: 1px solid var(--line); border-radius: 7px; background: none; cursor: pointer; padding: 2px; }
   .col-add { padding: 6px 10px 12px; }
   .col-add input {
     width: 100%; padding: 9px 11px; font-size: 14px; border: 1px solid var(--line);
@@ -238,6 +250,17 @@
   <div id="appView" class="hidden">
     <div class="toolbar">
       <button class="manage-btn" id="manageBtn">Edit lists</button>
+      <button class="manage-btn" id="themeBtn">🎨 Theme</button>
+    </div>
+
+    <!-- Theme picker panel (hidden by default) -->
+    <div class="panel hidden" id="themePanel">
+      <h3>Colour theme</h3>
+      <div class="swatches" id="swatches"></div>
+      <div class="custom-accent">
+        <span>Custom accent colour:</span>
+        <input type="color" id="accentPicker" value="#4f6df5">
+      </div>
     </div>
 
     <!-- Manage lists panel (hidden by default) -->
@@ -265,8 +288,81 @@
   let lists = [];           // [{id, name, ...}]
   let activeFilter = "All"; // "All" or a list id
   let managing = false;
+  let themeOpen = false;
 
   const $ = (id) => document.getElementById(id);
+
+  // --- Colour themes ---
+  const THEMES = {
+    Indigo:  { "--accent": "#4f6df5", "--accent-soft": "#eaeefe", "--bg": "#f4f5f7", "--card": "#ffffff", "--text": "#1d2330", "--line": "#e7e9ef", "--muted": "#8a93a6", "--done": "#aab2c2" },
+    Emerald: { "--accent": "#10b981", "--accent-soft": "#e2f6ef", "--bg": "#f4f6f5", "--card": "#ffffff", "--text": "#1d2330", "--line": "#e3ebe7", "--muted": "#8a968f", "--done": "#aab2c2" },
+    Rose:    { "--accent": "#e3506a", "--accent-soft": "#fce9ed", "--bg": "#f7f5f6", "--card": "#ffffff", "--text": "#1d2330", "--line": "#ece6e9", "--muted": "#9a8f93", "--done": "#c2aab2" },
+    Amber:   { "--accent": "#df8a16", "--accent-soft": "#fbeed7", "--bg": "#f7f6f3", "--card": "#ffffff", "--text": "#1d2330", "--line": "#ece7df", "--muted": "#9a948a", "--done": "#c2bca8" },
+    Violet:  { "--accent": "#8b5cf6", "--accent-soft": "#f0eafe", "--bg": "#f6f5f8", "--card": "#ffffff", "--text": "#1d2330", "--line": "#e9e7ec", "--muted": "#928fa0", "--done": "#b2aac2" },
+    Slate:   { "--accent": "#475569", "--accent-soft": "#e7ebef", "--bg": "#f4f5f7", "--card": "#ffffff", "--text": "#1d2330", "--line": "#e2e7ec", "--muted": "#8a93a6", "--done": "#aab2c2" },
+    Dark:    { "--accent": "#6d8bff", "--accent-soft": "#2a3050", "--bg": "#14161e", "--card": "#1e222e", "--text": "#e6e9f1", "--line": "#2d3342", "--muted": "#8a93a6", "--done": "#586074" }
+  };
+
+  function applyVars(vars) {
+    Object.entries(vars).forEach(([k, v]) => document.documentElement.style.setProperty(k, v));
+  }
+
+  // Light tint of a hex colour, for the "soft" accent background.
+  function softTint(hex) {
+    const c = hex.replace("#", "");
+    const r = parseInt(c.slice(0, 2), 16), g = parseInt(c.slice(2, 4), 16), b = parseInt(c.slice(4, 6), 16);
+    const mix = (x) => Math.round(x + (255 - x) * 0.88);
+    return "rgb(" + mix(r) + "," + mix(g) + "," + mix(b) + ")";
+  }
+
+  function setTheme(name) {
+    if (!THEMES[name]) return;
+    applyVars(THEMES[name]);
+    localStorage.setItem("mytasks-theme", JSON.stringify({ type: "preset", name }));
+    if (themeOpen) renderThemePanel();
+  }
+
+  function setCustomAccent(hex) {
+    applyVars({ "--accent": hex, "--accent-soft": softTint(hex) });
+    localStorage.setItem("mytasks-theme", JSON.stringify({ type: "accent", hex }));
+    if (themeOpen) renderThemePanel();
+  }
+
+  function loadSavedTheme() {
+    try {
+      const s = JSON.parse(localStorage.getItem("mytasks-theme"));
+      if (!s) return;
+      if (s.type === "preset" && THEMES[s.name]) applyVars(THEMES[s.name]);
+      else if (s.type === "accent") applyVars({ "--accent": s.hex, "--accent-soft": softTint(s.hex) });
+    } catch (e) { /* ignore */ }
+  }
+
+  function currentThemeName() {
+    try {
+      const s = JSON.parse(localStorage.getItem("mytasks-theme"));
+      return s && s.type === "preset" ? s.name : null;
+    } catch (e) { return null; }
+  }
+
+  function renderThemePanel() {
+    const box = $("swatches");
+    box.innerHTML = "";
+    const active = currentThemeName();
+    Object.keys(THEMES).forEach((name) => {
+      const sw = document.createElement("button");
+      sw.className = "swatch" + (name === active ? " active" : "");
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      dot.style.background = THEMES[name]["--accent"];
+      const lbl = document.createElement("span");
+      lbl.textContent = name;
+      sw.append(dot, lbl);
+      sw.addEventListener("click", () => setTheme(name));
+      box.appendChild(sw);
+    });
+  }
+
+  loadSavedTheme();
 
   // --- Check config ---
   const configured = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length > 20;
@@ -366,10 +462,27 @@
 
   async function loadTasks() {
     const { data, error } = await supa
-      .from("todos").select("*").order("created_at", { ascending: false });
+      .from("todos").select("*")
+      .order("position", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true });
     if (error) { console.error(error); return; }
     tasks = data || [];
     render();
+  }
+
+  // Tasks of one list, in display order.
+  function listTasks(listId) {
+    return tasks.filter((t) => t.list_id === listId)
+      .sort((a, b) => (a.position || 0) - (b.position || 0));
+  }
+
+  // Write a list's task order (and list membership) to the database.
+  function persistTaskOrder(listId, ordered) {
+    ordered.forEach((t, i) => { t.position = i + 1; t.list_id = listId; });
+    ordered.forEach((t) => {
+      supa.from("todos").update({ position: t.position, list_id: t.list_id }).eq("id", t.id)
+        .then(({ error }) => { if (error) console.error(error); });
+    });
   }
 
   // --- List operations ---
@@ -443,14 +556,44 @@
     const title = inputEl.value.trim();
     if (!title || !listId) return;
     inputEl.value = "";
+    const maxPos = tasks.filter((t) => t.list_id === listId).reduce((m, t) => Math.max(m, t.position || 0), 0);
     const { data, error } = await supa
-      .from("todos").insert({ title, list_id: listId, done: false }).select().single();
+      .from("todos").insert({ title, list_id: listId, done: false, position: maxPos + 1 }).select().single();
     if (error) { console.error(error); alert("Could not add task: " + error.message); return; }
-    tasks.unshift(data);
+    tasks.push(data);
     render();
     // keep focus in the same column's input for fast entry
     const again = document.querySelector('.col-add input[data-list="' + listId + '"]');
     if (again) again.focus();
+  }
+
+  // Move a task up/down within its column.
+  function moveTaskWithinList(t, dir) {
+    const arr = listTasks(t.list_id);
+    const i = arr.findIndex((x) => x.id === t.id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= arr.length) return;
+    const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+    persistTaskOrder(t.list_id, arr);
+    render();
+  }
+
+  // Move a task into a list, optionally before a specific task (for drag-and-drop).
+  function moveTaskToList(taskId, targetListId, beforeTaskId) {
+    const t = tasks.find((x) => x.id === taskId);
+    if (!t) return;
+    const fromList = t.list_id;
+    let target = listTasks(targetListId).filter((x) => x.id !== taskId);
+    if (beforeTaskId && beforeTaskId !== taskId) {
+      const idx = target.findIndex((x) => x.id === beforeTaskId);
+      if (idx >= 0) target.splice(idx, 0, t); else target.push(t);
+    } else {
+      target.push(t);
+    }
+    t.list_id = targetListId;
+    persistTaskOrder(targetListId, target);
+    if (fromList !== targetListId) persistTaskOrder(fromList, listTasks(fromList).filter((x) => x.id !== taskId));
+    render();
   }
 
   async function toggleTask(t) {
@@ -468,17 +611,19 @@
     if (error) { console.error(error); loadTasks(); }
   }
 
-  // Move a task to a different list.
-  async function reassignTask(t, newListId) {
+  // Move a task to the bottom of a different list (used by the "Move to…" menu).
+  function reassignTask(t, newListId) {
     if (!newListId || newListId === t.list_id) return;
-    const prev = t.list_id;
-    t.list_id = newListId;
-    render();
-    const { error } = await supa.from("todos").update({ list_id: newListId }).eq("id", t.id);
-    if (error) { console.error(error); t.list_id = prev; render(); alert("Could not move task: " + error.message); }
+    moveTaskToList(t.id, newListId, null);
   }
 
   $("manageBtn").addEventListener("click", () => { managing = !managing; render(); });
+  $("themeBtn").addEventListener("click", () => {
+    themeOpen = !themeOpen;
+    $("themePanel").classList.toggle("hidden", !themeOpen);
+    if (themeOpen) renderThemePanel();
+  });
+  $("accentPicker").addEventListener("input", (e) => setCustomAccent(e.target.value));
   $("addListBtn").addEventListener("click", async () => {
     await createList($("newListInput").value);
     $("newListInput").value = "";
@@ -560,7 +705,7 @@
       head.addEventListener("dragend", () => head.classList.remove("dragging"));
       const grip = document.createElement("span"); grip.className = "grip"; grip.textContent = "⠿";
       const name = document.createElement("span"); name.className = "col-name"; name.textContent = l.name;
-      const colTasks = tasks.filter((t) => t.list_id === l.id);
+      const colTasks = listTasks(l.id);
       const count = document.createElement("span"); count.className = "col-count"; count.textContent = colTasks.length;
       head.append(grip, name, count);
 
@@ -571,12 +716,21 @@
         const e = document.createElement("div"); e.className = "col-empty"; e.textContent = "No tasks yet";
         cards.appendChild(e);
       }
-      colTasks.forEach((t) => {
+      colTasks.forEach((t, ti) => {
         const card = document.createElement("div");
         card.className = "card" + (t.done ? " done" : "");
         card.draggable = true;
         card.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", "card:" + t.id); e.dataTransfer.effectAllowed = "move"; e.stopPropagation(); card.classList.add("dragging"); });
         card.addEventListener("dragend", () => card.classList.remove("dragging"));
+        // Drop another card onto this one to drop it right above (reorder or cross-list move).
+        card.addEventListener("dragover", (e) => { e.preventDefault(); e.stopPropagation(); card.classList.add("card-drop"); });
+        card.addEventListener("dragleave", () => card.classList.remove("card-drop"));
+        card.addEventListener("drop", (e) => {
+          e.preventDefault(); e.stopPropagation();
+          card.classList.remove("card-drop");
+          const data = e.dataTransfer.getData("text/plain");
+          if (data.startsWith("card:")) moveTaskToList(data.slice(5), l.id, t.id);
+        });
 
         const main = document.createElement("div");
         main.className = "card-main";
@@ -594,7 +748,18 @@
         main.append(check, title, del);
         card.appendChild(main);
 
-        // Mobile-friendly move control (drag works on desktop).
+        // Footer: up/down reorder + (when >1 list) a move-to menu.
+        const foot = document.createElement("div");
+        foot.className = "card-foot";
+        const up = document.createElement("button");
+        up.className = "icon-btn"; up.innerHTML = "▲"; up.title = "Move up";
+        up.disabled = ti === 0;
+        up.addEventListener("click", () => moveTaskWithinList(t, -1));
+        const down = document.createElement("button");
+        down.className = "icon-btn"; down.innerHTML = "▼"; down.title = "Move down";
+        down.disabled = ti === colTasks.length - 1;
+        down.addEventListener("click", () => moveTaskWithinList(t, 1));
+        foot.append(up, down);
         if (lists.length > 1) {
           const mv = document.createElement("select");
           mv.className = "move-select";
@@ -608,8 +773,9 @@
             mv.appendChild(o);
           });
           mv.addEventListener("change", () => { if (mv.value) reassignTask(t, mv.value); });
-          card.appendChild(mv);
+          foot.appendChild(mv);
         }
+        card.appendChild(foot);
 
         cards.appendChild(card);
       });
