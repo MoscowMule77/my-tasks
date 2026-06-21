@@ -177,13 +177,6 @@
   .check.on { opacity: 1; }
   .col-head .grip { color: var(--line); font-size: 13px; flex-shrink: 0; }
   .collapse-btn { font-size: 10px; padding: 0 2px; flex-shrink: 0; }
-  .column.collapsed { width: 48px; min-width: 48px; cursor: pointer; }
-  .column.collapsed .col-head { flex-direction: column; align-items: center; height: 100%; min-height: 150px; padding: 12px 4px; gap: 12px; cursor: pointer; }
-  .column.collapsed .grip { display: none; }
-  .column.collapsed .col-name {
-    writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap;
-    overflow: visible; text-overflow: clip; max-width: none; flex: 0 0 auto;
-  }
   .col-cards { display: flex; flex-direction: column; gap: 8px; padding: 4px 10px 6px; overflow-y: auto; flex: 1; min-height: 8px; }
   .col-empty { color: var(--muted); font-size: 13px; padding: 10px 4px; text-align: center; }
   .card {
@@ -244,6 +237,21 @@
     color: var(--muted); border-radius: 14px; padding: 14px; cursor: pointer; font-size: 14px; white-space: nowrap;
   }
   .add-column-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .col-collapse { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--muted); padding: 2px 4px; flex-shrink: 0; }
+  .col-collapse:hover { color: var(--accent); }
+  .column.collapsed {
+    width: 46px; min-width: 46px; cursor: pointer; align-items: center;
+    padding: 12px 0 16px;
+  }
+  .column.collapsed:hover { border-color: var(--accent); }
+  .col-collapsed-count {
+    font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-soft);
+    border-radius: 999px; padding: 1px 8px; margin-bottom: 10px;
+  }
+  .col-collapsed-name {
+    writing-mode: vertical-rl; font-weight: 600; font-size: 14px; color: var(--text);
+    white-space: nowrap; overflow: hidden; max-height: 320px; text-overflow: ellipsis;
+  }
 
   .setup-banner {
     background: #fff7e6; border: 1px solid #ffe2a8; color: #8a6100;
@@ -344,6 +352,20 @@
   const collapsed = new Set(); // list ids that are collapsed
 
   const $ = (id) => document.getElementById(id);
+
+  // Restore collapsed columns.
+  (function loadCollapsed() {
+    try {
+      const arr = JSON.parse(localStorage.getItem("mytasks-collapsed"));
+      if (Array.isArray(arr)) arr.forEach((id) => collapsed.add(id));
+    } catch (e) { /* ignore */ }
+  })();
+
+  function toggleCollapse(listId) {
+    if (collapsed.has(listId)) collapsed.delete(listId); else collapsed.add(listId);
+    localStorage.setItem("mytasks-collapsed", JSON.stringify([...collapsed]));
+    renderBoard();
+  }
 
   // --- Colour themes ---
   const THEMES = {
@@ -732,20 +754,6 @@
     if (s === "due" || s === "manual") sortMode = s;
   })();
 
-  // Restore which columns are collapsed (a per-device view preference).
-  (function loadCollapsed() {
-    try {
-      const a = JSON.parse(localStorage.getItem("mytasks-collapsed"));
-      if (Array.isArray(a)) a.forEach((id) => collapsed.add(id));
-    } catch (e) { /* ignore */ }
-  })();
-
-  function toggleCollapse(id) {
-    if (collapsed.has(id)) collapsed.delete(id); else collapsed.add(id);
-    localStorage.setItem("mytasks-collapsed", JSON.stringify([...collapsed]));
-    render();
-  }
-
   $("manageBtn").addEventListener("click", () => { managing = !managing; render(); });
   $("themeBtn").addEventListener("click", () => {
     themeOpen = !themeOpen;
@@ -857,9 +865,17 @@
       const count = document.createElement("span"); count.className = "col-count"; count.textContent = colTasks.length;
       head.append(collapseBtn, grip, name, count);
 
-      // Collapsed columns show only the header strip.
+      // Collapsed columns show only a slim vertical strip (click anywhere to expand).
       if (isCollapsed) {
-        col.appendChild(head);
+        col.title = "Click to expand";
+        const exp = document.createElement("span");
+        exp.className = "col-collapse"; exp.textContent = "▸";
+        exp.style.marginBottom = "8px";
+        const cnt = document.createElement("span");
+        cnt.className = "col-collapsed-count"; cnt.textContent = colTasks.length;
+        const nm = document.createElement("span");
+        nm.className = "col-collapsed-name"; nm.textContent = l.name;
+        col.append(exp, cnt, nm);
         board.appendChild(col);
         return;
       }
