@@ -144,7 +144,12 @@
   .hidden { display: none !important; }
 
   /* Toolbar */
-  .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .search {
+    flex: 1; min-width: 180px; max-width: 340px; padding: 8px 12px; font-size: 14px;
+    border: 1px solid var(--line); border-radius: 999px; outline: none; background: var(--card); color: var(--text);
+  }
+  .search:focus { border-color: var(--accent); }
 
   /* Board (kanban) */
   .board { display: flex; gap: 14px; align-items: flex-start; overflow-x: auto; padding-bottom: 12px; }
@@ -174,8 +179,20 @@
   .card.done .title { color: var(--done); text-decoration: line-through; }
   .card .del { font-size: 15px; margin-top: -1px; }
   .card.card-drop { border-color: var(--accent); border-style: dashed; }
-  .card-foot { display: flex; align-items: center; gap: 4px; }
+  .card-foot { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
   .card-foot .icon-btn { font-size: 11px; padding: 1px 4px; }
+  .due-input {
+    font-size: 11px; color: var(--muted); background: var(--card); border: 1px solid var(--line);
+    border-radius: 7px; padding: 2px 4px; outline: none; cursor: pointer; color-scheme: light dark;
+  }
+  .due-input:hover { border-color: var(--accent); }
+  .due-input.overdue { color: var(--danger); border-color: var(--danger); }
+  .due-input.today { color: #c47d00; border-color: #e0a52a; }
+  .col-clear {
+    margin: 0 10px 8px; padding: 6px; text-align: center; font-size: 12px; color: var(--muted);
+    background: none; border: none; cursor: pointer; border-radius: 8px;
+  }
+  .col-clear:hover { color: var(--danger); background: var(--bg); }
   .move-select {
     margin-left: auto; font-size: 11px; color: var(--muted); background: var(--card);
     border: 1px solid var(--line); border-radius: 7px; padding: 2px 5px; cursor: pointer; outline: none; max-width: 70%;
@@ -249,6 +266,7 @@
   <!-- App view -->
   <div id="appView" class="hidden">
     <div class="toolbar">
+      <input type="text" id="searchInput" class="search" placeholder="🔍 Search tasks…" autocomplete="off">
       <button class="manage-btn" id="manageBtn">Edit lists</button>
       <button class="manage-btn" id="themeBtn">🎨 Theme</button>
     </div>
@@ -289,6 +307,7 @@
   let activeFilter = "All"; // "All" or a list id
   let managing = false;
   let themeOpen = false;
+  let searchQuery = "";
 
   const $ = (id) => document.getElementById(id);
 
@@ -617,6 +636,37 @@
     moveTaskToList(t.id, newListId, null);
   }
 
+  // Set or clear a task's due date (value is "YYYY-MM-DD" or "").
+  async function setDue(t, value) {
+    const due = value || null;
+    t.due_date = due;
+    render();
+    const { error } = await supa.from("todos").update({ due_date: due }).eq("id", t.id);
+    if (error) { console.error(error); loadTasks(); }
+  }
+
+  // Delete all completed tasks in a list.
+  async function clearCompleted(listId) {
+    const doneTasks = tasks.filter((t) => t.list_id === listId && t.done);
+    if (!doneTasks.length) return;
+    if (!confirm("Delete " + doneTasks.length + " completed task(s) in this list?")) return;
+    const ids = doneTasks.map((t) => t.id);
+    tasks = tasks.filter((t) => !ids.includes(t.id));
+    render();
+    const { error } = await supa.from("todos").delete().in("id", ids);
+    if (error) { console.error(error); loadTasks(); }
+  }
+
+  // Returns "overdue" | "today" | "" for a YYYY-MM-DD date string.
+  function dueStatus(due) {
+    if (!due) return "";
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const d = new Date(due + "T00:00:00");
+    if (d < today) return "overdue";
+    if (d.getTime() === today.getTime()) return "today";
+    return "";
+  }
+
   $("manageBtn").addEventListener("click", () => { managing = !managing; render(); });
   $("themeBtn").addEventListener("click", () => {
     themeOpen = !themeOpen;
@@ -624,6 +674,7 @@
     if (themeOpen) renderThemePanel();
   });
   $("accentPicker").addEventListener("input", (e) => setCustomAccent(e.target.value));
+  $("searchInput").addEventListener("input", (e) => { searchQuery = e.target.value.trim().toLowerCase(); renderBoard(); });
   $("addListBtn").addEventListener("click", async () => {
     await createList($("newListInput").value);
     $("newListInput").value = "";
@@ -705,7 +756,10 @@
       head.addEventListener("dragend", () => head.classList.remove("dragging"));
       const grip = document.createElement("span"); grip.className = "grip"; grip.textContent = "⠿";
       const name = document.createElement("span"); name.className = "col-name"; name.textContent = l.name;
-      const colTasks = listTasks(l.id);
+      const allColTasks = listTasks(l.id);
+      const colTasks = searchQuery
+        ? allColTasks.filter((t) => t.title.toLowerCase().includes(searchQuery))
+        : allColTasks;
       const count = document.createElement("span"); count.className = "col-count"; count.textContent = colTasks.length;
       head.append(grip, name, count);
 
@@ -713,7 +767,8 @@
       const cards = document.createElement("div");
       cards.className = "col-cards";
       if (colTasks.length === 0) {
-        const e = document.createElement("div"); e.className = "col-empty"; e.textContent = "No tasks yet";
+        const e = document.createElement("div"); e.className = "col-empty";
+        e.textContent = searchQuery ? "No matches" : "No tasks yet";
         cards.appendChild(e);
       }
       colTasks.forEach((t, ti) => {
@@ -760,6 +815,16 @@
         down.disabled = ti === colTasks.length - 1;
         down.addEventListener("click", () => moveTaskWithinList(t, 1));
         foot.append(up, down);
+
+        // Due date
+        const due = document.createElement("input");
+        due.type = "date";
+        due.className = "due-input" + (t.due_date ? " " + dueStatus(t.due_date) : "");
+        due.title = "Due date";
+        if (t.due_date) due.value = t.due_date;
+        due.addEventListener("change", () => setDue(t, due.value));
+        foot.appendChild(due);
+
         if (lists.length > 1) {
           const mv = document.createElement("select");
           mv.className = "move-select";
@@ -780,6 +845,16 @@
         cards.appendChild(card);
       });
 
+      // Clear-completed button (only when this list has completed tasks)
+      const doneCount = allColTasks.filter((t) => t.done).length;
+      let clr = null;
+      if (doneCount > 0) {
+        clr = document.createElement("button");
+        clr.className = "col-clear";
+        clr.textContent = "Clear " + doneCount + " completed";
+        clr.addEventListener("click", () => clearCompleted(l.id));
+      }
+
       // Add-task input for this column
       const addWrap = document.createElement("div");
       addWrap.className = "col-add";
@@ -790,7 +865,9 @@
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter") addTaskToList(l.id, inp); });
       addWrap.appendChild(inp);
 
-      col.append(head, cards, addWrap);
+      col.append(head, cards);
+      if (clr) col.appendChild(clr);
+      col.appendChild(addWrap);
       board.appendChild(col);
     });
 
