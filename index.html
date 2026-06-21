@@ -79,6 +79,9 @@
     background: var(--card); font-size: 13px; cursor: pointer; color: var(--muted);
   }
   .chip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .chip[draggable="true"] { user-select: none; }
+  .chip.dragging { opacity: .45; }
+  .chip.drop-target { border-color: var(--accent); border-style: dashed; }
   .manage-btn {
     border: 1px solid var(--line); background: var(--card); color: var(--muted);
     border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap;
@@ -98,7 +101,9 @@
   }
   .list-edit input:focus { border-color: var(--accent); }
   .icon-btn { background: none; border: none; cursor: pointer; font-size: 15px; color: var(--muted); padding: 4px 6px; }
-  .icon-btn:hover { color: var(--danger); }
+  .icon-btn:hover { color: var(--accent); }
+  .icon-btn:disabled { opacity: .25; cursor: default; }
+  .list-edit .icon-btn:last-of-type:hover { color: var(--danger); }
   .new-list-row { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
   .new-list-row input {
     flex: 1; padding: 8px 10px; font-size: 14px; border: 1px solid var(--line); border-radius: 8px; outline: none;
@@ -125,6 +130,12 @@
     font-size: 11px; color: var(--muted); background: var(--bg);
     padding: 3px 9px; border-radius: 999px; flex-shrink: 0;
   }
+  .task .cat-select {
+    font-size: 11px; color: var(--muted); background: var(--bg);
+    border: 1px solid var(--line); padding: 3px 6px; border-radius: 999px;
+    flex-shrink: 0; max-width: 120px; cursor: pointer; outline: none;
+  }
+  .task .cat-select:hover { border-color: var(--accent); color: var(--accent); }
   .del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 17px; flex-shrink: 0; padding: 2px 4px; }
   .del:hover { color: var(--danger); }
 
@@ -305,7 +316,9 @@
 
   async function loadLists() {
     const { data, error } = await supa
-      .from("lists").select("*").order("created_at", { ascending: true });
+      .from("lists").select("*")
+      .order("position", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true });
     if (error) { console.error(error); return; }
     lists = data || [];
   }
@@ -322,10 +335,42 @@
   async function createList(name, silent) {
     const clean = (name || "").trim();
     if (!clean) return;
-    const { data, error } = await supa.from("lists").insert({ name: clean }).select().single();
+    const maxPos = lists.reduce((m, l) => Math.max(m, l.position || 0), 0);
+    const { data, error } = await supa.from("lists").insert({ name: clean, position: maxPos + 1 }).select().single();
     if (error) { console.error(error); if (!silent) alert("Could not add list: " + error.message); return; }
     lists.push(data);
     if (!silent) render();
+  }
+
+  // Re-number positions to match the current array order, and save to Supabase.
+  function persistPositions() {
+    lists.forEach((l, i) => { l.position = i + 1; });
+    lists.forEach((l) => {
+      supa.from("lists").update({ position: l.position }).eq("id", l.id)
+        .then(({ error }) => { if (error) console.error(error); });
+    });
+  }
+
+  // Move a list up (dir = -1) or down (dir = +1) — used by the arrow buttons.
+  function moveList(id, dir) {
+    const i = lists.findIndex((x) => x.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= lists.length) return;
+    const tmp = lists[i]; lists[i] = lists[j]; lists[j] = tmp;
+    persistPositions();
+    render();
+  }
+
+  // Drop list `fromId` at the position of `toId` — used by drag and drop.
+  function reorderListByDrag(fromId, toId) {
+    if (!fromId || fromId === toId) return;
+    const from = lists.findIndex((x) => x.id === fromId);
+    const to = lists.findIndex((x) => x.id === toId);
+    if (from < 0 || to < 0) return;
+    const [moved] = lists.splice(from, 1);
+    lists.splice(to, 0, moved);
+    persistPositions();
+    render();
   }
 
   async function renameList(id, name) {
@@ -383,6 +428,16 @@
     if (error) { console.error(error); loadTasks(); }
   }
 
+  // Move a task to a different list.
+  async function reassignTask(t, newListId) {
+    if (!newListId || newListId === t.list_id) return;
+    const prev = t.list_id;
+    t.list_id = newListId;
+    render();
+    const { error } = await supa.from("todos").update({ list_id: newListId }).eq("id", t.id);
+    if (error) { console.error(error); t.list_id = prev; render(); alert("Could not move task: " + error.message); }
+  }
+
   $("addBtn").addEventListener("click", addTask);
   $("taskInput").addEventListener("keydown", (e) => { if (e.key === "Enter") addTask(); });
 
@@ -423,7 +478,13 @@
       const el = document.createElement("button");
       el.className = "chip" + (activeFilter === l.id ? " active" : "");
       el.textContent = l.name;
+      el.draggable = true;
       el.addEventListener("click", () => { activeFilter = l.id; render(); });
+      el.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", l.id); e.dataTransfer.effectAllowed = "move"; el.classList.add("dragging"); });
+      el.addEventListener("dragend", () => el.classList.remove("dragging"));
+      el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("drop-target"); });
+      el.addEventListener("dragleave", () => el.classList.remove("drop-target"));
+      el.addEventListener("drop", (e) => { e.preventDefault(); el.classList.remove("drop-target"); reorderListByDrag(e.dataTransfer.getData("text/plain"), l.id); });
       chips.appendChild(el);
     });
 
@@ -436,9 +497,17 @@
       if (lists.length === 0) {
         box.innerHTML = '<div style="color:var(--muted);font-size:13px;">No lists yet — add one below.</div>';
       }
-      lists.forEach((l) => {
+      lists.forEach((l, idx) => {
         const row = document.createElement("div");
         row.className = "list-edit";
+        const up = document.createElement("button");
+        up.className = "icon-btn"; up.innerHTML = "▲"; up.title = "Move up";
+        up.disabled = idx === 0;
+        up.addEventListener("click", () => moveList(l.id, -1));
+        const down = document.createElement("button");
+        down.className = "icon-btn"; down.innerHTML = "▼"; down.title = "Move down";
+        down.disabled = idx === lists.length - 1;
+        down.addEventListener("click", () => moveList(l.id, 1));
         const inp = document.createElement("input");
         inp.value = l.name;
         inp.addEventListener("change", () => renameList(l.id, inp.value));
@@ -448,7 +517,7 @@
         del.innerHTML = "🗑";
         del.title = "Delete list";
         del.addEventListener("click", () => deleteList(l.id));
-        row.append(inp, del);
+        row.append(up, down, inp, del);
         box.appendChild(row);
       });
     }
@@ -471,9 +540,16 @@
       title.className = "title";
       title.textContent = t.title;
 
-      const cat = document.createElement("span");
-      cat.className = "cat";
-      cat.textContent = listName(t.list_id);
+      const cat = document.createElement("select");
+      cat.className = "cat-select";
+      cat.title = "Move to another list";
+      lists.forEach((l) => {
+        const o = document.createElement("option");
+        o.value = l.id; o.textContent = l.name;
+        if (l.id === t.list_id) o.selected = true;
+        cat.appendChild(o);
+      });
+      cat.addEventListener("change", () => reassignTask(t, cat.value));
 
       const del = document.createElement("button");
       del.className = "del";
