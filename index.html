@@ -290,7 +290,7 @@
       <h2>My Tasks</h2>
       <p>Sign in, or create an account to get started.</p>
       <input type="email" id="emailInput" placeholder="you@example.com" autocomplete="email">
-      <input type="password" id="passwordInput" placeholder="Password (6+ characters)" autocomplete="current-password">
+      <input type="password" id="passwordInput" placeholder="Password" autocomplete="current-password">
       <button class="btn" id="signInBtn">Sign in</button>
       <button class="link-btn" id="createBtn" style="margin-top:14px;">Create an account</button>
       <div class="note" id="authNote"></div>
@@ -495,8 +495,8 @@
     const email = $("emailInput").value.trim();
     const password = $("passwordInput").value;
     const note = $("authNote");
-    if (!email || !password) { note.textContent = "Enter an email and a password (6+ characters)."; note.className = "note err"; return; }
-    if (password.length < 6) { note.textContent = "Password must be at least 6 characters."; note.className = "note err"; return; }
+    if (!email || !password) { note.textContent = "Enter an email and a password (10+ characters)."; note.className = "note err"; return; }
+    if (password.length < 10) { note.textContent = "Password must be at least 10 characters."; note.className = "note err"; return; }
     $("createBtn").disabled = true;
     note.textContent = "Creating your account…"; note.className = "note";
     const { data, error } = await supa.auth.signUp({ email, password });
