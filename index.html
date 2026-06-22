@@ -227,6 +227,16 @@
   }
   .move-select:hover { border-color: var(--accent); color: var(--accent); }
 
+  /* Calendar feed */
+  .cal-url-row { display: flex; gap: 8px; }
+  .cal-url-row input {
+    flex: 1; padding: 8px 10px; font-size: 13px; border: 1px solid var(--line);
+    border-radius: 8px; outline: none; background: var(--bg); color: var(--text); font-family: monospace;
+  }
+  .cal-url-row button {
+    padding: 0 16px; background: var(--accent); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px;
+  }
+
   /* Theme picker */
   .swatches { display: flex; flex-wrap: wrap; gap: 12px; }
   .swatch { display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; font-size: 11px; color: var(--muted); width: 58px; background: none; border: none; }
@@ -317,6 +327,21 @@
       </select>
       <button class="manage-btn" id="manageBtn">Edit lists</button>
       <button class="manage-btn" id="themeBtn">🎨 Theme</button>
+      <button class="manage-btn" id="calBtn">📅 Calendar</button>
+    </div>
+
+    <!-- Calendar feed panel (hidden by default) -->
+    <div class="panel hidden" id="calPanel">
+      <h3>Apple Calendar feed</h3>
+      <p style="margin:0 0 12px;color:var(--muted);font-size:13px;">
+        Subscribe Apple Calendar to this private link to see your tasks with due dates as all-day events.
+        It updates automatically. Keep the link private — anyone with it can see your due-dated task titles.
+      </p>
+      <div class="cal-url-row">
+        <input type="text" id="calUrl" readonly>
+        <button id="calCopy">Copy</button>
+      </div>
+      <div class="note" id="calNote" style="margin-top:10px;"></div>
     </div>
 
     <!-- Theme picker panel (hidden by default) -->
@@ -794,6 +819,20 @@
     if (themeOpen) renderThemePanel();
   });
   $("accentPicker").addEventListener("input", (e) => setCustomAccent(e.target.value));
+  $("calBtn").addEventListener("click", () => {
+    const panel = $("calPanel");
+    const open = panel.classList.contains("hidden");
+    panel.classList.toggle("hidden", !open);
+    if (open) {
+      $("calUrl").value = feedUrl();
+      $("calNote").textContent = "";
+      updateCalendarFeed(); // make sure the feed file exists/refreshed
+    }
+  });
+  $("calCopy").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(feedUrl()); $("calNote").textContent = "Link copied ✓"; $("calNote").className = "note ok"; }
+    catch (e) { $("calUrl").select(); $("calNote").textContent = "Press Cmd+C to copy."; $("calNote").className = "note"; }
+  });
   $("searchInput").addEventListener("input", (e) => { searchQuery = e.target.value.trim().toLowerCase(); renderBoard(); });
   $("sortSelect").addEventListener("change", (e) => { sortMode = e.target.value; localStorage.setItem("mytasks-sort", sortMode); renderBoard(); });
   $("addListBtn").addEventListener("click", async () => {
@@ -807,10 +846,52 @@
     return l ? l.name : "—";
   }
 
+  // --- Calendar (.ics) feed ---
+  function feedUrl() {
+    return user ? (SUPABASE_URL + "/storage/v1/object/public/calendar/" + user.id + ".ics") : "";
+  }
+
+  function buildICS() {
+    const esc = (s) => String(s == null ? "" : s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+    const ymd = (d) => d.replace(/-/g, "");
+    const nextDay = (d) => { const dt = new Date(d + "T00:00:00"); dt.setDate(dt.getDate() + 1); return dt.toISOString().slice(0, 10).replace(/-/g, ""); };
+    const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+    const out = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//My Tasks//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:My Tasks", "NAME:My Tasks"];
+    tasks.filter((t) => t.due_date).forEach((t) => {
+      out.push("BEGIN:VEVENT");
+      out.push("UID:" + t.id + "@mytasks");
+      out.push("DTSTAMP:" + stamp);
+      out.push("DTSTART;VALUE=DATE:" + ymd(t.due_date));
+      out.push("DTEND;VALUE=DATE:" + nextDay(t.due_date));
+      out.push("SUMMARY:" + esc((t.done ? "✓ " : "") + t.title));
+      out.push("DESCRIPTION:" + esc((t.notes ? t.notes + "\n" : "") + "List: " + listName(t.list_id)));
+      out.push("END:VEVENT");
+    });
+    out.push("END:VCALENDAR");
+    return out.join("\r\n");
+  }
+
+  let calTimer = null;
+  function scheduleCalendarUpdate() {
+    if (!user || !supa) return;
+    clearTimeout(calTimer);
+    calTimer = setTimeout(updateCalendarFeed, 2500);
+  }
+  async function updateCalendarFeed() {
+    if (!user || !supa) return;
+    try {
+      const blob = new Blob([buildICS()], { type: "text/calendar" });
+      const { error } = await supa.storage.from("calendar")
+        .upload(user.id + ".ics", blob, { contentType: "text/calendar", upsert: true, cacheControl: "60" });
+      if (error) console.error("calendar upload:", error);
+    } catch (e) { console.error(e); }
+  }
+
   // --- Render ---
   function render() {
     renderManagePanel();
     renderBoard();
+    scheduleCalendarUpdate();
   }
 
   function renderManagePanel() {
