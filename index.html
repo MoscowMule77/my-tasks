@@ -25,7 +25,7 @@
     color: var(--text);
     line-height: 1.4;
   }
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 24px 18px 40px; }
+  .wrap { max-width: 1760px; margin: 0 auto; padding: 24px 18px 40px; }
   .auth-wrap { max-width: 620px; margin: 0 auto; }
 
   header.app { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
@@ -164,7 +164,7 @@
   .board { display: flex; gap: 14px; align-items: flex-start; overflow-x: auto; padding-bottom: 12px; }
   .column {
     background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 14px;
-    width: 270px; min-width: 270px; display: flex; flex-direction: column;
+    flex: 1 1 0; min-width: 234px; max-width: 340px; display: flex; flex-direction: column;
     max-height: calc(100vh - 170px);
   }
   .column.drop-target { border-color: var(--accent); border-style: dashed; }
@@ -207,6 +207,10 @@
   .due-input:hover { border-color: var(--accent); }
   .due-input.overdue { color: var(--danger); border-color: var(--danger); }
   .due-input.today { color: #c47d00; border-color: #e0a52a; }
+  .due-add { font-size: 11px; color: var(--muted); background: none; border: 1px dashed var(--line); border-radius: 7px; padding: 2px 7px; cursor: pointer; }
+  .due-add:hover { border-color: var(--accent); color: var(--accent); }
+  .due-clear { font-size: 11px; color: var(--muted); background: none; border: none; cursor: pointer; padding: 0 3px; }
+  .due-clear:hover { color: var(--danger); }
   .col-clear {
     margin: 0 10px 8px; padding: 6px; text-align: center; font-size: 12px; color: var(--muted);
     background: none; border: none; cursor: pointer; border-radius: 8px;
@@ -233,14 +237,14 @@
   }
   .col-add input:focus { border-color: var(--accent); }
   .add-column-btn {
-    min-width: 200px; align-self: stretch; border: 1.5px dashed var(--line); background: transparent;
+    flex: 0 0 160px; align-self: stretch; border: 1.5px dashed var(--line); background: transparent;
     color: var(--muted); border-radius: 14px; padding: 14px; cursor: pointer; font-size: 14px; white-space: nowrap;
   }
   .add-column-btn:hover { border-color: var(--accent); color: var(--accent); }
   .col-collapse { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--muted); padding: 2px 4px; flex-shrink: 0; }
   .col-collapse:hover { color: var(--accent); }
   .column.collapsed {
-    width: 46px; min-width: 46px; cursor: pointer; align-items: center;
+    flex: 0 0 46px; width: 46px; min-width: 46px; max-width: 46px; cursor: pointer; align-items: center;
     padding: 12px 0 16px;
   }
   .column.collapsed:hover { border-color: var(--accent); }
@@ -350,6 +354,7 @@
   let sortMode = "manual"; // "manual" or "due"
   const expanded = new Set(); // task ids whose notes are open
   const collapsed = new Set(); // list ids that are collapsed
+  const dueEditing = new Set(); // task ids currently picking a due date
 
   const $ = (id) => document.getElementById(id);
 
@@ -957,14 +962,29 @@
           foot.append(up, down);
         }
 
-        // Due date
-        const due = document.createElement("input");
-        due.type = "date";
-        due.className = "due-input" + (t.due_date ? " " + dueStatus(t.due_date) : "");
-        due.title = "Due date";
-        if (t.due_date) due.value = t.due_date;
-        due.addEventListener("change", () => setDue(t, due.value));
-        foot.appendChild(due);
+        // Due date — hidden (n/a) until added; shows a small "Add due" button instead.
+        if (t.due_date || dueEditing.has(t.id)) {
+          const due = document.createElement("input");
+          due.type = "date";
+          due.className = "due-input" + (t.due_date ? " " + dueStatus(t.due_date) : "");
+          due.title = "Due date";
+          if (t.due_date) due.value = t.due_date;
+          due.addEventListener("change", () => { dueEditing.delete(t.id); setDue(t, due.value); });
+          foot.appendChild(due);
+          const clr = document.createElement("button");
+          clr.className = "due-clear"; clr.innerHTML = "✕"; clr.title = "Remove due date";
+          clr.addEventListener("click", () => { dueEditing.delete(t.id); setDue(t, ""); });
+          foot.appendChild(clr);
+          if (!t.due_date && dueEditing.has(t.id)) {
+            setTimeout(() => { try { due.focus(); if (due.showPicker) due.showPicker(); } catch (e) { /* ignore */ } }, 0);
+          }
+        } else {
+          const addDue = document.createElement("button");
+          addDue.className = "due-add"; addDue.textContent = "📅 Add due";
+          addDue.title = "Add a due date";
+          addDue.addEventListener("click", () => { dueEditing.add(t.id); render(); });
+          foot.appendChild(addDue);
+        }
 
         if (lists.length > 1) {
           const mv = document.createElement("select");
