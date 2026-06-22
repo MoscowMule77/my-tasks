@@ -160,12 +160,17 @@
   }
   .sort-select:hover { border-color: var(--accent); color: var(--accent); }
 
-  /* Board (kanban) */
-  .board { display: flex; gap: 14px; align-items: flex-start; overflow-x: auto; padding-bottom: 12px; }
+  /* Board (kanban) — wraps lists into rows */
+  .board { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; align-content: flex-start; padding-bottom: 12px; }
+  .board-drop {
+    margin-top: 14px; border: 2px dashed var(--line); border-radius: 14px;
+    padding: 20px; text-align: center; color: var(--muted); font-size: 13px; transition: background .12s;
+  }
+  .board-drop.drop-target { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .column {
     background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 14px;
-    flex: 1 1 0; min-width: 222px; max-width: 340px; display: flex; flex-direction: column;
-    max-height: calc(100vh - 170px);
+    flex: 1 1 240px; min-width: 222px; max-width: 300px; display: flex; flex-direction: column;
+    max-height: 76vh;
   }
   .column.drop-target { border-color: var(--accent); border-style: dashed; }
   .col-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; cursor: grab; }
@@ -334,8 +339,11 @@
       </div>
     </div>
 
-    <!-- Kanban board: one column per list -->
+    <!-- Kanban board: one column per list, wraps into rows -->
     <div class="board" id="board"></div>
+
+    <!-- Drag a list header here to send it to the end (next row) -->
+    <div class="board-drop" id="boardDrop">⬇ Drag a list here to move it to the bottom row</div>
   </div>
 
 </div>
@@ -595,6 +603,16 @@
     render();
   }
 
+  // Move a list to the very end (bottom row) — used by the bottom drop zone.
+  function moveListToEnd(id) {
+    const i = lists.findIndex((x) => x.id === id);
+    if (i < 0 || i === lists.length - 1) return;
+    const [moved] = lists.splice(i, 1);
+    lists.push(moved);
+    persistPositions();
+    render();
+  }
+
   // Drop list `fromId` at the position of `toId` — used by drag and drop.
   function reorderListByDrag(fromId, toId) {
     if (!fromId || fromId === toId) return;
@@ -758,6 +776,16 @@
     const s = localStorage.getItem("mytasks-sort");
     if (s === "due" || s === "manual") sortMode = s;
   })();
+
+  // Bottom drop zone: drag a list header here to send it to the end (next row).
+  $("boardDrop").addEventListener("dragover", (e) => { e.preventDefault(); $("boardDrop").classList.add("drop-target"); });
+  $("boardDrop").addEventListener("dragleave", () => $("boardDrop").classList.remove("drop-target"));
+  $("boardDrop").addEventListener("drop", (e) => {
+    e.preventDefault();
+    $("boardDrop").classList.remove("drop-target");
+    const data = e.dataTransfer.getData("text/plain");
+    if (data.startsWith("col:")) moveListToEnd(data.slice(4));
+  });
 
   $("manageBtn").addEventListener("click", () => { managing = !managing; render(); });
   $("themeBtn").addEventListener("click", () => {
