@@ -609,6 +609,33 @@
     if (!silent) render();
   }
 
+  // --- Auto-overflow: cap a list at 10 items, spilling into a same-named list beside it ---
+  const LIST_CAP = 10;
+
+  // Return a list id (the given list or a same-named sibling) that has room, creating
+  // a new same-named list immediately after if all siblings are full.
+  async function ensureRoom(listId) {
+    const l = lists.find((x) => x.id === listId);
+    if (!l) return listId;
+    const siblings = lists.filter((x) => x.name === l.name); // already in display order
+    for (const s of siblings) {
+      if (tasks.filter((t) => t.list_id === s.id).length < LIST_CAP) return s.id;
+    }
+    const last = siblings[siblings.length - 1] || l;
+    const created = await createListAfter(l.name, last.id);
+    return created ? created.id : listId;
+  }
+
+  // Create a list immediately after another one, shifting the rest along.
+  async function createListAfter(name, afterListId) {
+    const idx = lists.findIndex((x) => x.id === afterListId);
+    const { data, error } = await supa.from("lists").insert({ name }).select().single();
+    if (error) { console.error(error); alert("Could not add list: " + error.message); return null; }
+    lists.splice(idx < 0 ? lists.length : idx + 1, 0, data);
+    persistPositions();
+    return data;
+  }
+
   // Re-number positions to match the current array order, and save to Supabase.
   function persistPositions() {
     lists.forEach((l, i) => { l.position = i + 1; });
@@ -679,9 +706,10 @@
     const title = inputEl.value.trim();
     if (!title || !listId) return;
     inputEl.value = "";
-    const maxPos = tasks.filter((t) => t.list_id === listId).reduce((m, t) => Math.max(m, t.position || 0), 0);
+    const targetId = await ensureRoom(listId); // spill into a new same-named list if this one is full
+    const maxPos = tasks.filter((t) => t.list_id === targetId).reduce((m, t) => Math.max(m, t.position || 0), 0);
     const { data, error } = await supa
-      .from("todos").insert({ title, list_id: listId, done: false, position: maxPos + 1 }).select().single();
+      .from("todos").insert({ title, list_id: targetId, done: false, position: maxPos + 1 }).select().single();
     if (error) { console.error(error); alert("Could not add task: " + error.message); return; }
     tasks.push(data);
     render();
@@ -735,9 +763,10 @@
   }
 
   // Move a task to the bottom of a different list (used by the "Move to…" menu).
-  function reassignTask(t, newListId) {
+  async function reassignTask(t, newListId) {
     if (!newListId || newListId === t.list_id) return;
-    moveTaskToList(t.id, newListId, null);
+    const targetId = await ensureRoom(newListId); // spill into a same-named list if full
+    moveTaskToList(t.id, targetId, null);
   }
 
   // Set or clear a task's due date (value is "YYYY-MM-DD" or "").
