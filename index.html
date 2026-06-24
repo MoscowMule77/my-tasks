@@ -170,8 +170,15 @@
   .column {
     background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 14px;
     flex: 1 1 240px; min-width: 222px; max-width: 300px; display: flex; flex-direction: column;
-    max-height: 76vh;
+    max-height: 76vh; position: relative;
   }
+  .col-resize {
+    position: absolute; right: 2px; bottom: 2px; width: 16px; height: 16px;
+    cursor: nwse-resize; opacity: 0; border-radius: 0 0 12px 0;
+    background: linear-gradient(135deg, transparent 0 46%, var(--muted) 46% 56%, transparent 56% 66%, var(--muted) 66% 76%, transparent 76%);
+  }
+  .column:hover .col-resize { opacity: .55; }
+  .col-resize:hover { opacity: 1; }
   .column.drop-target { border-color: var(--accent); border-style: dashed; }
   .col-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; cursor: grab; }
   .col-head:active { cursor: grabbing; }
@@ -643,6 +650,51 @@
       supa.from("lists").update({ position: l.position }).eq("id", l.id)
         .then(({ error }) => { if (error) console.error(error); });
     });
+  }
+
+  // --- Drag-to-resize a list ---
+  function applyListSize(col, l) {
+    if (l.width) {
+      col.style.flex = "0 0 " + l.width + "px";
+      col.style.width = l.width + "px";
+      col.style.minWidth = l.width + "px";
+      col.style.maxWidth = l.width + "px";
+    }
+    if (l.height) {
+      col.style.height = l.height + "px";
+      col.style.maxHeight = l.height + "px";
+    }
+  }
+
+  function persistListSize(l) {
+    supa.from("lists").update({ width: l.width || null, height: l.height || null }).eq("id", l.id)
+      .then(({ error }) => { if (error) console.error(error); });
+  }
+
+  function startResize(e, col, l) {
+    e.preventDefault(); e.stopPropagation();
+    const sx = e.clientX, sy = e.clientY, sw = col.offsetWidth, sh = col.offsetHeight;
+    let nw = sw, nh = sh;
+    const mm = (ev) => {
+      nw = Math.max(190, Math.min(720, sw + (ev.clientX - sx)));
+      nh = Math.max(140, Math.min(window.innerHeight - 90, sh + (ev.clientY - sy)));
+      col.style.flex = "0 0 " + nw + "px"; col.style.width = nw + "px"; col.style.minWidth = nw + "px"; col.style.maxWidth = nw + "px";
+      col.style.height = nh + "px"; col.style.maxHeight = nh + "px";
+    };
+    const mu = () => {
+      document.removeEventListener("mousemove", mm); document.removeEventListener("mouseup", mu);
+      document.body.style.userSelect = "";
+      l.width = Math.round(nw); l.height = Math.round(nh);
+      persistListSize(l);
+    };
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", mm); document.addEventListener("mouseup", mu);
+  }
+
+  function resetListSize(l) {
+    l.width = null; l.height = null;
+    persistListSize(l);
+    render();
   }
 
   // Move a list up (dir = -1) or down (dir = +1) — used by the arrow buttons.
@@ -1167,6 +1219,16 @@
       col.append(head, cards);
       if (clr) col.appendChild(clr);
       col.appendChild(addWrap);
+
+      // Saved custom size + drag-to-resize grip
+      applyListSize(col, l);
+      const resizeGrip = document.createElement("div");
+      resizeGrip.className = "col-resize";
+      resizeGrip.title = "Drag to resize · double-click to reset to auto";
+      resizeGrip.addEventListener("mousedown", (e) => startResize(e, col, l));
+      resizeGrip.addEventListener("dblclick", () => resetListSize(l));
+      col.appendChild(resizeGrip);
+
       board.appendChild(col);
     });
 
