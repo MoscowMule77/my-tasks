@@ -493,7 +493,8 @@
   if (!configured) {
     $("setupBanner").classList.remove("hidden");
     $("authView").classList.remove("hidden");
-    $("sendLinkBtn").disabled = true;
+    $("signInBtn").disabled = true;
+    $("createBtn").disabled = true;
     $("authNote").textContent = "Add your Supabase keys to enable sign-in.";
     $("authNote").className = "note err";
     return;
