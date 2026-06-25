@@ -101,6 +101,11 @@
     border-radius: 8px; outline: none;
   }
   .list-edit input:focus { border-color: var(--accent); }
+  .merge-select {
+    font-size: 12px; color: var(--muted); background: var(--card); border: 1px solid var(--line);
+    border-radius: 8px; padding: 4px 6px; outline: none; cursor: pointer; max-width: 130px; flex-shrink: 0;
+  }
+  .merge-select:hover { border-color: var(--accent); color: var(--accent); }
   .icon-btn { background: none; border: none; cursor: pointer; font-size: 15px; color: var(--muted); padding: 4px 6px; }
   .icon-btn:hover { color: var(--accent); }
   .icon-btn:disabled { opacity: .25; cursor: default; }
@@ -758,6 +763,31 @@
     if (error) { console.error(error); loadAll(); }
   }
 
+  // Move all of one list's tasks into another, then delete the (now empty) list.
+  async function mergeList(fromId, intoId) {
+    if (!intoId || fromId === intoId) return;
+    const from = lists.find((x) => x.id === fromId);
+    const into = lists.find((x) => x.id === intoId);
+    const moving = listTasks(fromId);
+    const msg = "Move " + moving.length + " task(s) from \"" + (from ? from.name : "") +
+      "\" into \"" + (into ? into.name : "") + "\", then delete \"" + (from ? from.name : "") + "\"?";
+    if (!confirm(msg)) { render(); return; }
+    const base = tasks.filter((t) => t.list_id === intoId).reduce((m, t) => Math.max(m, t.position || 0), 0);
+    moving.forEach((t, i) => { t.list_id = intoId; t.position = base + i + 1; });
+    lists = lists.filter((x) => x.id !== fromId);
+    if (activeFilter === fromId) activeFilter = "All";
+    render();
+    // Persist moved tasks first; only delete the list if they all saved (so nothing is lost).
+    let failed = false;
+    for (const t of moving) {
+      const { error } = await supa.from("todos").update({ list_id: intoId, position: t.position }).eq("id", t.id);
+      if (error) { console.error(error); failed = true; }
+    }
+    if (failed) { loadAll(); return; }
+    const { error } = await supa.from("lists").delete().eq("id", fromId);
+    if (error) { console.error(error); loadAll(); }
+  }
+
   // --- Task operations ---
   async function addTaskToList(listId, inputEl) {
     const title = inputEl.value.trim();
@@ -1039,9 +1069,23 @@
       const del = document.createElement("button");
       del.className = "icon-btn";
       del.innerHTML = "🗑";
-      del.title = "Delete list";
+      del.title = "Delete list (and its tasks)";
       del.addEventListener("click", () => deleteList(l.id));
-      row.append(up, down, inp, del);
+      if (lists.length > 1) {
+        const mrg = document.createElement("select");
+        mrg.className = "merge-select";
+        mrg.title = "Move this list's tasks into another list, then delete it";
+        const ph = document.createElement("option"); ph.value = ""; ph.textContent = "Merge into…";
+        mrg.appendChild(ph);
+        lists.filter((x) => x.id !== l.id).forEach((x) => {
+          const o = document.createElement("option"); o.value = x.id; o.textContent = "→ " + x.name;
+          mrg.appendChild(o);
+        });
+        mrg.addEventListener("change", () => { if (mrg.value) mergeList(l.id, mrg.value); mrg.value = ""; });
+        row.append(up, down, inp, mrg, del);
+      } else {
+        row.append(up, down, inp, del);
+      }
       box.appendChild(row);
     });
   }
