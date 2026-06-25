@@ -217,6 +217,18 @@
     background: var(--card); color: var(--text); box-sizing: border-box;
   }
   .notes:focus { border-color: var(--accent); }
+  .sub-badge { font-size: 11px; color: var(--muted); flex-shrink: 0; cursor: pointer; }
+  .subtasks { display: flex; flex-direction: column; gap: 5px; }
+  .subtask { display: flex; align-items: center; gap: 8px; }
+  .sub-check { width: 16px; height: 16px; border: 2px solid var(--line); border-radius: 5px; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .sub-check.on { background: var(--accent); border-color: var(--accent); }
+  .sub-check.on::after { content: "✓"; color: #fff; font-size: 10px; }
+  .sub-title { flex: 1; font-size: 13px; }
+  .subtask.done .sub-title { color: var(--done); text-decoration: line-through; }
+  .sub-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; flex-shrink: 0; padding: 0 2px; }
+  .sub-del:hover { color: var(--danger); }
+  .sub-add { width: 100%; padding: 5px 8px; font-size: 13px; border: 1px solid var(--line); border-radius: 7px; outline: none; background: var(--card); color: var(--text); }
+  .sub-add:focus { border-color: var(--accent); }
   .card .del { font-size: 15px; margin-top: -1px; }
   .card.card-drop { border-color: var(--accent); border-style: dashed; }
   .card-foot { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
@@ -924,6 +936,34 @@
     if (error) console.error(error);
   }
 
+  // --- Subtasks (a checklist stored on the task) ---
+  function uid() {
+    return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + "-" + Math.random().toString(16).slice(2));
+  }
+  async function saveSubtasks(t) {
+    const { error } = await supa.from("todos").update({ subtasks: t.subtasks || [] }).eq("id", t.id);
+    if (error) console.error(error);
+  }
+  function addSubtask(t, title) {
+    const v = (title || "").trim();
+    if (!v) return;
+    if (!Array.isArray(t.subtasks)) t.subtasks = [];
+    t.subtasks.push({ id: uid(), title: v, done: false });
+    saveSubtasks(t); render();
+    const again = document.querySelector('.sub-add[data-sub="' + t.id + '"]');
+    if (again) again.focus();
+  }
+  function toggleSubtask(t, id) {
+    const s = (t.subtasks || []).find((x) => x.id === id);
+    if (!s) return;
+    s.done = !s.done;
+    saveSubtasks(t); render();
+  }
+  function deleteSubtask(t, id) {
+    t.subtasks = (t.subtasks || []).filter((x) => x.id !== id);
+    saveSubtasks(t); render();
+  }
+
   // Tasks of a list in the current display order (manual position, or by due date),
   // with completed tasks always sunk to the bottom.
   function displayTasks(listId) {
@@ -1188,7 +1228,7 @@
         const title = document.createElement("div");
         title.className = "title";
         title.textContent = t.title;
-        title.title = "Click for notes · double-click to rename";
+        title.title = "Click for details · double-click to rename";
         const toggleNotes = () => { if (expanded.has(t.id)) expanded.delete(t.id); else expanded.add(t.id); render(); };
         let titleClickTimer = null;
         title.addEventListener("click", () => {
@@ -1202,6 +1242,15 @@
         del.title = "Delete";
         del.addEventListener("click", () => deleteTask(t));
         main.append(check, title);
+        const subs = Array.isArray(t.subtasks) ? t.subtasks : [];
+        if (subs.length) {
+          const badge = document.createElement("span");
+          badge.className = "sub-badge";
+          badge.textContent = "☑ " + subs.filter((s) => s.done).length + "/" + subs.length;
+          badge.title = "Subtasks";
+          badge.addEventListener("click", toggleNotes);
+          main.appendChild(badge);
+        }
         if (t.notes) {
           const dot = document.createElement("span");
           dot.className = "note-dot"; dot.textContent = "🗒"; dot.title = "Has notes";
@@ -1211,8 +1260,32 @@
         main.appendChild(del);
         card.appendChild(main);
 
-        // Notes (shown when the card is expanded)
+        // Details (subtasks + notes) shown when the card is expanded
         if (expanded.has(t.id)) {
+          const subWrap = document.createElement("div");
+          subWrap.className = "subtasks";
+          subs.forEach((s) => {
+            const srow = document.createElement("div");
+            srow.className = "subtask" + (s.done ? " done" : "");
+            const schk = document.createElement("div");
+            schk.className = "sub-check" + (s.done ? " on" : "");
+            schk.addEventListener("click", () => toggleSubtask(t, s.id));
+            const stt = document.createElement("span");
+            stt.className = "sub-title"; stt.textContent = s.title;
+            const sdl = document.createElement("button");
+            sdl.className = "sub-del"; sdl.innerHTML = "✕"; sdl.title = "Delete subtask";
+            sdl.addEventListener("click", () => deleteSubtask(t, s.id));
+            srow.append(schk, stt, sdl);
+            subWrap.appendChild(srow);
+          });
+          const subInp = document.createElement("input");
+          subInp.className = "sub-add"; subInp.type = "text"; subInp.placeholder = "+ Add subtask";
+          subInp.setAttribute("data-sub", t.id);
+          subInp.addEventListener("mousedown", (e) => e.stopPropagation());
+          subInp.addEventListener("keydown", (e) => { if (e.key === "Enter") addSubtask(t, subInp.value); });
+          subWrap.appendChild(subInp);
+          card.appendChild(subWrap);
+
           const ta = document.createElement("textarea");
           ta.className = "notes";
           ta.placeholder = "Notes…";
