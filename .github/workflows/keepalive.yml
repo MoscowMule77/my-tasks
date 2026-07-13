@@ -1,0 +1,31 @@
+name: Supabase keep-alive
+
+# Supabase pauses free projects after ~7 days with no activity.
+# This pings a tiny "heartbeat" table every 3 days so the project never idles out.
+# It runs on GitHub's servers, so it works even when your computer is off.
+
+on:
+  schedule:
+    - cron: "0 9 */3 * *" # 09:00 UTC, every 3rd day
+  workflow_dispatch: # lets you run it manually from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase heartbeat
+        run: |
+          ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVsc3BmeHZ1b2Vsb2p6cnJ3Ym5mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyOTY2MjksImV4cCI6MjA5Njg3MjYyOX0.0lo11zKoh_ZdQPq6PDrFy96Gm6TL7J-Q5CYRtTJcens"
+          URL="https://ulspfxvuoelojzrrwbnf.supabase.co/rest/v1/heartbeat?select=id"
+          echo "Pinging Supabase to keep the project awake..."
+          code=$(curl -sS -o /tmp/out.txt -w "%{http_code}" \
+            -H "apikey: $ANON" \
+            -H "Authorization: Bearer $ANON" \
+            "$URL")
+          echo "HTTP $code"
+          cat /tmp/out.txt
+          if [ "$code" != "200" ]; then
+            echo "::error::Heartbeat failed (HTTP $code) — the Supabase project may be paused."
+            exit 1
+          fi
+          echo "Heartbeat OK — project is awake."
