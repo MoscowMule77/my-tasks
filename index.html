@@ -299,6 +299,16 @@
   }
   .move-select:hover { border-color: var(--accent); color: var(--accent); }
 
+  /* Backup / restore */
+  .backup-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn-inline {
+    padding: 9px 16px; font-size: 14px; font-weight: 600; background: var(--accent); color: #fff;
+    border: none; border-radius: 9px; cursor: pointer; display: inline-block;
+  }
+  .btn-inline:hover { opacity: .92; }
+  .btn-inline.restore { background: var(--card); color: var(--muted); border: 1px solid var(--line); font-weight: 500; }
+  .btn-inline.restore:hover { border-color: var(--danger); color: var(--danger); opacity: 1; }
+
   /* Calendar feed */
   .cal-url-row { display: flex; gap: 8px; }
   .cal-url-row input {
@@ -404,6 +414,25 @@
       <button class="manage-btn" id="manageBtn">Edit lists</button>
       <button class="manage-btn" id="themeBtn">🎨 Theme</button>
       <button class="manage-btn" id="calBtn">📤 Feed</button>
+      <button class="manage-btn" id="backupBtn">💾 Backup</button>
+    </div>
+
+    <!-- Backup / restore panel (hidden by default) -->
+    <div class="panel hidden" id="backupPanel">
+      <h3>Backup &amp; restore</h3>
+      <p style="margin:0 0 12px;color:var(--muted);font-size:13px;">
+        Download a copy of everything (all lists, tasks, subtasks, notes and due dates) as a file you keep.
+        Do this now and then, so you always have a safety net.
+      </p>
+      <div class="backup-row">
+        <button class="btn-inline" id="exportBtn">⬇ Download backup</button>
+        <label class="btn-inline restore" for="importFile">⬆ Restore from backup…</label>
+        <input type="file" id="importFile" accept="application/json,.json" style="display:none;">
+      </div>
+      <div class="note" id="backupNote" style="margin-top:10px;"></div>
+      <p style="margin:10px 0 0;color:var(--muted);font-size:12px;">
+        Restoring <strong>replaces</strong> everything currently in your account with the contents of the backup file.
+      </p>
     </div>
 
     <!-- Calendar feed panel (hidden by default) -->
@@ -1080,6 +1109,18 @@
     try { await navigator.clipboard.writeText(feedUrl()); $("calNote").textContent = "Link copied ✓"; $("calNote").className = "note ok"; }
     catch (e) { $("calUrl").select(); $("calNote").textContent = "Press Cmd+C to copy."; $("calNote").className = "note"; }
   });
+  $("backupBtn").addEventListener("click", () => {
+    const p = $("backupPanel");
+    const opening = p.classList.contains("hidden");
+    p.classList.toggle("hidden", !opening);
+    if (opening) { $("backupNote").textContent = ""; $("backupNote").className = "note"; }
+  });
+  $("exportBtn").addEventListener("click", exportBackup);
+  $("importFile").addEventListener("change", (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) importBackup(f);
+    e.target.value = ""; // allow re-selecting the same file
+  });
   $("viewBoardBtn").addEventListener("click", () => { view = "board"; localStorage.setItem("mytasks-view", "board"); render(); });
   $("viewCalBtn").addEventListener("click", () => { view = "calendar"; localStorage.setItem("mytasks-view", "calendar"); render(); });
   $("searchInput").addEventListener("input", (e) => { searchQuery = e.target.value.trim().toLowerCase(); renderBoard(); });
@@ -1093,6 +1134,71 @@
   function listName(id) {
     const l = lists.find((x) => x.id === id);
     return l ? l.name : "—";
+  }
+
+  // --- Backup & restore ---
+  function exportBackup() {
+    const data = {
+      app: "my-tasks", version: 1,
+      exported_at: new Date().toISOString(),
+      lists: lists.map((l) => ({ id: l.id, name: l.name, position: l.position, width: l.width, height: l.height })),
+      tasks: tasks.map((t) => ({
+        id: t.id, list_id: t.list_id, title: t.title, done: t.done, position: t.position,
+        due_date: t.due_date, notes: t.notes, subtasks: t.subtasks || []
+      }))
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "my-tasks-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    const n = $("backupNote");
+    n.textContent = "Backup downloaded (" + data.lists.length + " lists, " + data.tasks.length + " tasks) ✓";
+    n.className = "note ok";
+  }
+
+  async function importBackup(file) {
+    const n = $("backupNote");
+    let data;
+    try { data = JSON.parse(await file.text()); }
+    catch (e) { n.textContent = "That file isn't valid JSON."; n.className = "note err"; return; }
+    if (!data || !Array.isArray(data.lists) || !Array.isArray(data.tasks)) {
+      n.textContent = "That doesn't look like a My Tasks backup file."; n.className = "note err"; return;
+    }
+    const msg = "This will REPLACE everything in your account with the backup:\n\n" +
+      data.lists.length + " lists and " + data.tasks.length + " tasks.\n\nYour current data will be deleted. Continue?";
+    if (!confirm(msg)) return;
+
+    n.textContent = "Restoring…"; n.className = "note";
+    // 1. Remove current lists (tasks cascade-delete with them)
+    const currentIds = lists.map((l) => l.id);
+    if (currentIds.length) {
+      const { error } = await supa.from("lists").delete().in("id", currentIds);
+      if (error) { n.textContent = "Restore failed: " + error.message; n.className = "note err"; return; }
+    }
+    // 2. Recreate lists, mapping old ids -> new ids
+    const idMap = {};
+    for (const l of data.lists) {
+      const { data: nl, error } = await supa.from("lists")
+        .insert({ name: l.name, position: l.position, width: l.width, height: l.height }).select().single();
+      if (error) { n.textContent = "Restore failed: " + error.message; n.className = "note err"; return; }
+      idMap[l.id] = nl.id;
+    }
+    // 3. Recreate tasks against the new list ids
+    const rows = data.tasks
+      .map((t) => ({
+        title: t.title, list_id: idMap[t.list_id], done: !!t.done, position: t.position,
+        due_date: t.due_date || null, notes: t.notes || null, subtasks: t.subtasks || []
+      }))
+      .filter((r) => r.list_id);
+    if (rows.length) {
+      const { error } = await supa.from("todos").insert(rows);
+      if (error) { n.textContent = "Restore failed: " + error.message; n.className = "note err"; return; }
+    }
+    await loadAll();
+    n.textContent = "Restore complete — " + data.lists.length + " lists and " + rows.length + " tasks restored ✓";
+    n.className = "note ok";
   }
 
   // --- Calendar (.ics) feed ---
