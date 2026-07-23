@@ -1,0 +1,18 @@
+# Files Git should ignore — never committed, never pushed.
+
+# macOS clutter
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Editor / IDE settings
+.vscode/
+.idea/
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Dependencies (if we ever add a build step)
+node_modules/

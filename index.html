@@ -382,7 +382,7 @@
 
   <header class="app hidden" id="appHeader">
     <h1>My Tasks</h1>
-    <div class="who"><span id="whoEmail"></span><button class="link-btn" id="logoutBtn">Sign out</button></div>
+    <div class="who"><span id="whoEmail"></span><button class="link-btn" id="pwBtn">Password</button><button class="link-btn" id="logoutBtn">Sign out</button></div>
   </header>
 
   <!-- Auth view -->
@@ -393,8 +393,21 @@
       <input type="email" id="emailInput" placeholder="you@example.com" autocomplete="email">
       <input type="password" id="passwordInput" placeholder="Password" autocomplete="current-password">
       <button class="btn" id="signInBtn">Sign in</button>
+      <button class="link-btn" id="forgotBtn" style="margin-top:10px;">Forgot password?</button>
       <button class="link-btn" id="createBtn" style="margin-top:14px;">Create an account</button>
       <div class="note" id="authNote"></div>
+    </div>
+  </div>
+
+  <!-- Set / change password view (used by recovery link and by "Password") -->
+  <div id="pwView" class="hidden">
+    <div class="auth-card">
+      <h2 id="pwTitle">Set a new password</h2>
+      <p id="pwSub">Choose a new password (10+ characters).</p>
+      <input type="password" id="newPwInput" placeholder="New password" autocomplete="new-password">
+      <button class="btn" id="savePwBtn">Save password</button>
+      <button class="link-btn" id="cancelPwBtn" style="margin-top:12px;">Cancel</button>
+      <div class="note" id="pwNote"></div>
     </div>
   </div>
 
@@ -608,25 +621,47 @@
   supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   // --- Auth ---
+  let recovering = false; // true while the user is following a reset-password link
+
   async function init() {
     const { data } = await supa.auth.getSession();
     setUser(data.session ? data.session.user : null);
-    supa.auth.onAuthStateChange((_e, session) => setUser(session ? session.user : null));
+    supa.auth.onAuthStateChange((event, session) => {
+      // When the user clicks the reset link in their email, Supabase fires this event.
+      if (event === "PASSWORD_RECOVERY") { recovering = true; showPwView("recovery"); return; }
+      if (recovering) return; // stay on the set-password screen until they finish
+      setUser(session ? session.user : null);
+    });
   }
 
   function setUser(u) {
     user = u;
     if (user) {
       $("authView").classList.add("hidden");
+      $("pwView").classList.add("hidden");
       $("appView").classList.remove("hidden");
       $("appHeader").classList.remove("hidden");
       $("whoEmail").textContent = user.email;
       loadAll();
     } else {
       $("authView").classList.remove("hidden");
+      $("pwView").classList.add("hidden");
       $("appView").classList.add("hidden");
       $("appHeader").classList.add("hidden");
     }
+  }
+
+  // Show the set/change-password screen. mode: "recovery" (from email link) or "change" (logged in).
+  function showPwView(mode) {
+    $("authView").classList.add("hidden");
+    $("appView").classList.add("hidden");
+    $("appHeader").classList.toggle("hidden", mode !== "change");
+    $("pwView").classList.remove("hidden");
+    $("newPwInput").value = "";
+    $("pwNote").textContent = "";
+    $("pwTitle").textContent = mode === "recovery" ? "Reset your password" : "Change password";
+    $("pwSub").textContent = "Choose a new password (10+ characters).";
+    $("newPwInput").focus();
   }
 
   async function doSignIn() {
@@ -664,11 +699,49 @@
     // If a session is returned (email confirmation off), onAuthStateChange logs you straight in.
   }
 
+  // Send a password-reset email.
+  async function doForgot() {
+    const email = $("emailInput").value.trim();
+    const note = $("authNote");
+    if (!email) { note.textContent = "Type your email above first, then tap \"Forgot password?\"."; note.className = "note err"; return; }
+    $("forgotBtn").disabled = true;
+    note.textContent = "Sending reset link…"; note.className = "note";
+    const { error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname });
+    $("forgotBtn").disabled = false;
+    if (error) { note.textContent = error.message; note.className = "note err"; }
+    else { note.textContent = "Check your email for a reset link ✉️ (it can take a minute)."; note.className = "note ok"; }
+  }
+
+  // Save a new password (used by both recovery and change flows).
+  async function savePassword() {
+    const pw = $("newPwInput").value;
+    const note = $("pwNote");
+    if (pw.length < 10) { note.textContent = "Password must be at least 10 characters."; note.className = "note err"; return; }
+    $("savePwBtn").disabled = true;
+    note.textContent = "Saving…"; note.className = "note";
+    const { error } = await supa.auth.updateUser({ password: pw });
+    $("savePwBtn").disabled = false;
+    if (error) { note.textContent = error.message; note.className = "note err"; return; }
+    recovering = false;
+    const { data } = await supa.auth.getSession();
+    note.textContent = "Password updated ✓";
+    setUser(data.session ? data.session.user : null);
+  }
+
   $("signInBtn").addEventListener("click", doSignIn);
   $("createBtn").addEventListener("click", doSignUp);
+  $("forgotBtn").addEventListener("click", doForgot);
   $("passwordInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doSignIn(); });
   $("emailInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("passwordInput").focus(); });
   $("logoutBtn").addEventListener("click", async () => { await supa.auth.signOut(); });
+  $("pwBtn").addEventListener("click", () => showPwView("change"));
+  $("savePwBtn").addEventListener("click", savePassword);
+  $("newPwInput").addEventListener("keydown", (e) => { if (e.key === "Enter") savePassword(); });
+  $("cancelPwBtn").addEventListener("click", () => {
+    recovering = false;
+    if (user) { $("pwView").classList.add("hidden"); $("appView").classList.remove("hidden"); $("appHeader").classList.remove("hidden"); }
+    else { $("pwView").classList.add("hidden"); $("authView").classList.remove("hidden"); }
+  });
 
   // --- Load lists + tasks ---
   async function loadAll() {
