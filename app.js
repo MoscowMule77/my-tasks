@@ -2,7 +2,9 @@
   let supa = null;
   let user = null;
   let tasks = [];
-  let lists = [];           // [{id, name, ...}]
+  let lists = [];           // [{id, name, board_id, ...}]
+  let boards = [];          // [{id, name, position}] — the Sorted Tabs
+  let activeBoard = null;   // id of the board (tab) currently shown
   let activeFilter = "All"; // "All" or a list id
   let managing = false;
   let themeOpen = false;
@@ -245,15 +247,92 @@
     else { $("pwView").classList.add("hidden"); $("authView").classList.remove("hidden"); }
   });
 
-  // --- Load lists + tasks ---
+  // --- Load boards + lists + tasks ---
   async function loadAll() {
+    await loadBoards();
+    // Everyone gets at least one board (tab).
+    if (boards.length === 0) await createBoard("Personal", true);
+    // Restore the last-open tab (falling back to the first board).
+    const saved = localStorage.getItem("mytasks-board");
+    activeBoard = boards.some((b) => b.id === saved) ? saved : boards[0].id;
     await loadLists();
     // First-time users get a starter list so the app is usable right away.
     if (lists.length === 0) {
-      await createList("Personal", true);
+      await createList("To do", true);
       await loadLists();
     }
     await loadTasks();
+  }
+
+  // --- Boards (Sorted Tabs) ---
+  async function loadBoards() {
+    const { data, error } = await supa
+      .from("boards").select("*")
+      .order("position", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true });
+    if (error) { console.error(error); return; }
+    boards = data || [];
+  }
+
+  // Lists belonging to the board currently on screen.
+  function boardLists() {
+    return lists.filter((l) => l.board_id === activeBoard);
+  }
+
+  // Tasks belonging to the board currently on screen.
+  function boardTasks() {
+    const ids = new Set(boardLists().map((l) => l.id));
+    return tasks.filter((t) => ids.has(t.list_id));
+  }
+
+  async function createBoard(name, silent) {
+    const clean = (name || "").trim();
+    if (!clean) return null;
+    const maxPos = boards.reduce((m, b) => Math.max(m, b.position || 0), 0);
+    const { data, error } = await supa.from("boards").insert({ name: clean, position: maxPos + 1 }).select().single();
+    if (error) { console.error(error); if (!silent) alert("Could not add board: " + error.message); return null; }
+    boards.push(data);
+    if (!activeBoard) activeBoard = data.id;
+    return data;
+  }
+
+  function setActiveBoard(id) {
+    activeBoard = id;
+    localStorage.setItem("mytasks-board", id);
+    activeFilter = "All";
+    render();
+  }
+
+  async function renameBoard(id, name) {
+    const clean = (name || "").trim();
+    if (!clean) return;
+    const b = boards.find((x) => x.id === id);
+    if (b) b.name = clean;
+    render();
+    const { error } = await supa.from("boards").update({ name: clean }).eq("id", id);
+    if (error) { console.error(error); loadAll(); }
+  }
+
+  async function deleteBoard(id) {
+    if (boards.length <= 1) { alert("You need at least one board."); return; }
+    const b = boards.find((x) => x.id === id);
+    const bl = lists.filter((l) => l.board_id === id);
+    const ids = new Set(bl.map((l) => l.id));
+    const tCount = tasks.filter((t) => ids.has(t.list_id)).length;
+    const msg = bl.length
+      ? 'Delete board "' + (b ? b.name : "") + '" and its ' + bl.length + " list(s) with " + tCount + " task(s)?"
+      : 'Delete board "' + (b ? b.name : "") + '"?';
+    if (!confirm(msg)) return;
+    boards = boards.filter((x) => x.id !== id);
+    lists = lists.filter((l) => l.board_id !== id);
+    tasks = tasks.filter((t) => !ids.has(t.list_id)); // server cascade-deletes these
+    if (activeBoard === id) {
+      activeBoard = boards[0].id;
+      localStorage.setItem("mytasks-board", activeBoard);
+    }
+    render();
+    const { error } = await supa.from("boards").delete().eq("id", id);
+    if (error) { console.error(error); loadAll(); }
   }
 
   async function loadLists() {
@@ -295,7 +374,7 @@
     const clean = (name || "").trim();
     if (!clean) return;
     const maxPos = lists.reduce((m, l) => Math.max(m, l.position || 0), 0);
-    const { data, error } = await supa.from("lists").insert({ name: clean, position: maxPos + 1 }).select().single();
+    const { data, error } = await supa.from("lists").insert({ name: clean, position: maxPos + 1, board_id: activeBoard }).select().single();
     if (error) { console.error(error); if (!silent) alert("Could not add list: " + error.message); return; }
     lists.push(data);
     if (!silent) render();
@@ -309,7 +388,7 @@
   async function ensureRoom(listId) {
     const l = lists.find((x) => x.id === listId);
     if (!l) return listId;
-    const siblings = lists.filter((x) => x.name === l.name); // already in display order
+    const siblings = lists.filter((x) => x.name === l.name && x.board_id === l.board_id); // same board, display order
     for (const s of siblings) {
       if (tasks.filter((t) => t.list_id === s.id).length < LIST_CAP) return s.id;
     }
@@ -321,7 +400,8 @@
   // Create a list immediately after another one, shifting the rest along.
   async function createListAfter(name, afterListId) {
     const idx = lists.findIndex((x) => x.id === afterListId);
-    const { data, error } = await supa.from("lists").insert({ name }).select().single();
+    const after = lists[idx];
+    const { data, error } = await supa.from("lists").insert({ name, board_id: after ? after.board_id : activeBoard }).select().single();
     if (error) { console.error(error); alert("Could not add list: " + error.message); return null; }
     lists.splice(idx < 0 ? lists.length : idx + 1, 0, data);
     persistPositions();
@@ -382,12 +462,15 @@
     render();
   }
 
-  // Move a list up (dir = -1) or down (dir = +1) — used by the arrow buttons.
+  // Move a list up (dir = -1) or down (dir = +1) within its board — used by the arrow buttons.
   function moveList(id, dir) {
-    const i = lists.findIndex((x) => x.id === id);
+    const bl = boardLists();
+    const i = bl.findIndex((x) => x.id === id);
     const j = i + dir;
-    if (i < 0 || j < 0 || j >= lists.length) return;
-    const tmp = lists[i]; lists[i] = lists[j]; lists[j] = tmp;
+    if (i < 0 || j < 0 || j >= bl.length) return;
+    // Swap the two lists' slots in the global array so other boards are untouched.
+    const gi = lists.indexOf(bl[i]), gj = lists.indexOf(bl[j]);
+    const tmp = lists[gi]; lists[gi] = lists[gj]; lists[gj] = tmp;
     persistPositions();
     render();
   }
@@ -642,9 +725,9 @@
     return arr.filter((t) => !t.done).concat(arr.filter((t) => t.done));
   }
 
-  // Number of overdue, not-done tasks across all lists.
+  // Number of overdue, not-done tasks on the current board.
   function overdueCount() {
-    return tasks.filter((t) => !t.done && dueStatus(t.due_date) === "overdue").length;
+    return boardTasks().filter((t) => !t.done && dueStatus(t.due_date) === "overdue").length;
   }
 
   // Restore saved sort preference.
@@ -714,9 +797,10 @@
   // --- Backup & restore ---
   function exportBackup() {
     const data = {
-      app: "my-tasks", version: 1,
+      app: "my-tasks", version: 2,
       exported_at: new Date().toISOString(),
-      lists: lists.map((l) => ({ id: l.id, name: l.name, position: l.position, width: l.width, height: l.height })),
+      boards: boards.map((b) => ({ id: b.id, name: b.name, position: b.position })),
+      lists: lists.map((l) => ({ id: l.id, name: l.name, position: l.position, width: l.width, height: l.height, board_id: l.board_id })),
       tasks: tasks.map((t) => ({
         id: t.id, list_id: t.list_id, title: t.title, done: t.done, position: t.position,
         due_date: t.due_date, notes: t.notes, subtasks: t.subtasks || []
@@ -746,17 +830,36 @@
     if (!confirm(msg)) return;
 
     n.textContent = "Restoring…"; n.className = "note";
-    // 1. Remove current lists (tasks cascade-delete with them)
-    const currentIds = lists.map((l) => l.id);
-    if (currentIds.length) {
-      const { error } = await supa.from("lists").delete().in("id", currentIds);
+    // 1. Remove current boards (lists and tasks cascade-delete with them)
+    const currentBoardIds = boards.map((b) => b.id);
+    if (currentBoardIds.length) {
+      const { error } = await supa.from("boards").delete().in("id", currentBoardIds);
       if (error) { n.textContent = "Restore failed: " + error.message; n.className = "note err"; return; }
     }
-    // 2. Recreate lists, mapping old ids -> new ids
+    // Also remove any stray lists not attached to a board (from very old data).
+    const strayIds = lists.filter((l) => !l.board_id).map((l) => l.id);
+    if (strayIds.length) await supa.from("lists").delete().in("id", strayIds);
+
+    // 2. Recreate boards (old backups without boards get a single "Personal" board)
+    const boardMap = {};
+    const backupBoards = Array.isArray(data.boards) && data.boards.length
+      ? data.boards : [{ id: "__default__", name: "Personal", position: 1 }];
+    for (const b of backupBoards) {
+      const { data: nb, error } = await supa.from("boards")
+        .insert({ name: b.name, position: b.position }).select().single();
+      if (error) { n.textContent = "Restore failed: " + error.message; n.className = "note err"; return; }
+      boardMap[b.id] = nb.id;
+    }
+    const defaultBoardId = boardMap[backupBoards[0].id];
+
+    // 3. Recreate lists, mapping old ids -> new ids
     const idMap = {};
     for (const l of data.lists) {
       const { data: nl, error } = await supa.from("lists")
-        .insert({ name: l.name, position: l.position, width: l.width, height: l.height }).select().single();
+        .insert({
+          name: l.name, position: l.position, width: l.width, height: l.height,
+          board_id: boardMap[l.board_id] || defaultBoardId
+        }).select().single();
       if (error) { n.textContent = "Restore failed: " + error.message; n.className = "note err"; return; }
       idMap[l.id] = nl.id;
     }
@@ -819,9 +922,49 @@
 
   // --- Render ---
   function render() {
+    renderTabs();
     renderManagePanel();
     renderView();
     scheduleCalendarUpdate();
+  }
+
+  // --- Sorted Tabs (board tab row) ---
+  function renderTabs() {
+    const row = $("tabsRow");
+    if (!row) return;
+    row.innerHTML = "";
+    boards.forEach((b) => {
+      const tab = document.createElement("button");
+      tab.className = "tab" + (b.id === activeBoard ? " active" : "");
+      const label = document.createElement("span");
+      label.textContent = b.name;
+      tab.appendChild(label);
+      tab.title = b.id === activeBoard ? "Double-click to rename" : "Switch to " + b.name;
+      tab.addEventListener("click", () => { if (b.id !== activeBoard) setActiveBoard(b.id); });
+      tab.addEventListener("dblclick", () => {
+        const name = prompt('Rename board "' + b.name + '":', b.name);
+        if (name && name.trim()) renameBoard(b.id, name.trim());
+      });
+      // The active tab (when it isn't the only one) gets a small delete control.
+      if (boards.length > 1 && b.id === activeBoard) {
+        const x = document.createElement("span");
+        x.className = "tab-x"; x.textContent = "✕"; x.title = "Delete this board";
+        x.addEventListener("click", (e) => { e.stopPropagation(); deleteBoard(b.id); });
+        tab.appendChild(x);
+      }
+      row.appendChild(tab);
+    });
+    const add = document.createElement("button");
+    add.className = "tab tab-add"; add.textContent = "+";
+    add.title = "New board";
+    add.addEventListener("click", async () => {
+      const name = prompt("New board name (e.g. Work):");
+      if (name && name.trim()) {
+        const b = await createBoard(name);
+        if (b) setActiveBoard(b.id);
+      }
+    });
+    row.appendChild(add);
   }
 
   function renderView() {
@@ -867,7 +1010,7 @@
     c.addEventListener("click", () => toggleTask(t));
     return c;
   }
-  function tasksOn(ds) { return tasks.filter((t) => t.due_date === ds); }
+  function tasksOn(ds) { return boardTasks().filter((t) => t.due_date === ds); }
 
   function renderCalendar() {
     const cal = $("calView");
@@ -895,7 +1038,7 @@
     else cal.appendChild(buildDay());
 
     const un = document.createElement("div"); un.className = "cal-unscheduled";
-    const undated = tasks.filter((t) => !t.due_date);
+    const undated = boardTasks().filter((t) => !t.due_date);
     const h = document.createElement("h3"); h.textContent = "No due date (" + undated.length + ")";
     un.appendChild(h);
     const items = document.createElement("div"); items.className = "cal-unsched-items";
@@ -973,10 +1116,11 @@
     if (!managing) return;
     const box = $("listEdits");
     box.innerHTML = "";
-    if (lists.length === 0) {
-      box.innerHTML = '<div style="color:var(--muted);font-size:13px;">No lists yet — add one below.</div>';
+    const bl = boardLists();
+    if (bl.length === 0) {
+      box.innerHTML = '<div style="color:var(--muted);font-size:13px;">No lists on this board yet — add one below.</div>';
     }
-    lists.forEach((l, idx) => {
+    bl.forEach((l, idx) => {
       const row = document.createElement("div");
       row.className = "list-edit";
       const up = document.createElement("button");
@@ -985,7 +1129,7 @@
       up.addEventListener("click", () => moveList(l.id, -1));
       const down = document.createElement("button");
       down.className = "icon-btn"; down.innerHTML = "▼"; down.title = "Move down";
-      down.disabled = idx === lists.length - 1;
+      down.disabled = idx === bl.length - 1;
       down.addEventListener("click", () => moveList(l.id, 1));
       const inp = document.createElement("input");
       inp.value = l.name;
@@ -996,13 +1140,13 @@
       del.innerHTML = "🗑";
       del.title = "Delete list (and its tasks)";
       del.addEventListener("click", () => deleteList(l.id));
-      if (lists.length > 1) {
+      if (bl.length > 1) {
         const mrg = document.createElement("select");
         mrg.className = "merge-select";
         mrg.title = "Move this list's tasks into another list, then delete it";
         const ph = document.createElement("option"); ph.value = ""; ph.textContent = "Merge into…";
         mrg.appendChild(ph);
-        lists.filter((x) => x.id !== l.id).forEach((x) => {
+        bl.filter((x) => x.id !== l.id).forEach((x) => {
           const o = document.createElement("option"); o.value = x.id; o.textContent = "→ " + x.name;
           mrg.appendChild(o);
         });
@@ -1026,7 +1170,7 @@
     if (oc > 0) { badge.textContent = "⚠ " + oc + " overdue"; badge.classList.remove("hidden"); }
     else badge.classList.add("hidden");
 
-    lists.forEach((l) => {
+    boardLists().forEach((l) => {
       const isCollapsed = collapsed.has(l.id);
       const col = document.createElement("div");
       col.className = "column" + (isCollapsed ? " collapsed" : "");
@@ -1222,14 +1366,14 @@
           foot.appendChild(addDue);
         }
 
-        if (lists.length > 1) {
+        if (boardLists().length > 1) {
           const mv = document.createElement("select");
           mv.className = "move-select";
           mv.title = "Move to another list";
           const ph = document.createElement("option");
           ph.value = ""; ph.textContent = "Move to…";
           mv.appendChild(ph);
-          lists.filter((x) => x.id !== l.id).forEach((x) => {
+          boardLists().filter((x) => x.id !== l.id).forEach((x) => {
             const o = document.createElement("option");
             o.value = x.id; o.textContent = "→ " + x.name;
             mv.appendChild(o);
