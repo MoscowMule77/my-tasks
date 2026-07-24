@@ -1,0 +1,17 @@
+{
+  "name": "sorted",
+  "version": "1.0.0",
+  "description": "Sorted — your tasks, sorted. Web app + iOS wrapper.",
+  "private": true,
+  "scripts": {
+    "build": "rm -rf www && mkdir -p www && cp index.html styles.css app.js manifest.json www/ && cp -R icons www/icons",
+    "ios": "npm run build && npx cap sync ios && npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/ios": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.0.0"
+  }
+}

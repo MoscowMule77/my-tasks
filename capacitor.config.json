@@ -1,0 +1,9 @@
+{
+  "appId": "now.sortedgroup.sorted",
+  "appName": "Sorted",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "automatic"
+  },
+  "backgroundColor": "#f6f7f9"
+}
