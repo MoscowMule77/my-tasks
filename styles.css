@@ -259,6 +259,14 @@
 
   /* Board (kanban) — wraps lists into rows */
   .board { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; align-content: flex-start; padding-bottom: 12px; }
+
+  /* Page dots — phone-only swipe indicator (hidden on desktop) */
+  .board-dots { display: none; }
+  .bdot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--line);
+    border: none; padding: 0; cursor: pointer; flex-shrink: 0;
+  }
+  .bdot.active { background: var(--accent); }
   .board-drop {
     margin-top: 14px; border: 2px dashed var(--line); border-radius: 14px;
     padding: 20px; text-align: center; color: var(--muted); font-size: 13px; transition: background .12s;
@@ -423,13 +431,23 @@
     .search { flex: 1 1 100%; max-width: none; order: -1; padding: 11px 14px; font-size: 16px; }
     .vt-btn, .manage-btn, .sort-select { padding: 9px 14px; }
 
-    /* One list per screen-width: columns stack full-width instead of squeezing */
-    .board { gap: 12px; }
+    /* Swipe between lists: the board becomes a horizontal pager — one list per
+       screen, snapping to each. Swipe left/right to move between lists. */
+    .board {
+      flex-wrap: nowrap; gap: 12px;
+      overflow-x: auto; scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .board::-webkit-scrollbar { display: none; }
     .column {
-      flex: 1 1 100% !important;
+      flex: 0 0 100% !important;
       width: 100% !important; min-width: 0 !important; max-width: 100% !important;
       height: auto !important; max-height: none !important;
+      scroll-snap-align: start; scroll-snap-stop: always;
     }
+    .add-column-btn { flex: 0 0 100%; scroll-snap-align: start; padding: 28px 14px; }
+    .board-dots { display: flex; justify-content: center; gap: 8px; padding: 10px 0 2px; }
     .col-resize { display: none; } /* drag-resize is a desktop tool */
     .column.collapsed {
       flex: 1 1 100% !important; width: 100% !important; min-width: 0 !important;

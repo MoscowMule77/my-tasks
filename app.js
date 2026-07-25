@@ -984,6 +984,7 @@
     $("viewBoardBtn").classList.toggle("active", boardOn);
     $("viewCalBtn").classList.toggle("active", !boardOn);
     $("board").classList.toggle("hidden", !boardOn);
+    $("boardDots").classList.toggle("hidden", !boardOn);
     $("boardDrop").classList.toggle("hidden", !boardOn);
     $("calView").classList.toggle("hidden", boardOn);
     // overdue badge is shared across both views
@@ -1173,6 +1174,7 @@
 
   function renderBoard() {
     const board = $("board");
+    const prevScroll = board.scrollLeft; // keep the swiped-to list stable across re-renders
     board.innerHTML = "";
 
     // Toolbar state: sort selection + overdue badge.
@@ -1451,7 +1453,44 @@
       if (name && name.trim()) await createList(name);
     });
     board.appendChild(addCol);
+
+    board.scrollLeft = prevScroll;
+    renderBoardDots();
   }
+
+  // --- Page dots for phone swiping ---
+  function renderBoardDots() {
+    const dots = $("boardDots");
+    if (!dots) return;
+    dots.innerHTML = "";
+    const board = $("board");
+    const pages = board.children.length; // lists + the "add list" page
+    if (pages < 2) return;
+    for (let i = 0; i < pages; i++) {
+      const d = document.createElement("button");
+      d.className = "bdot";
+      d.title = i === pages - 1 ? "Add list" : "Go to list " + (i + 1);
+      d.addEventListener("click", () => {
+        const target = board.children[i];
+        board.scrollTo({ left: target.offsetLeft - board.offsetLeft, behavior: "smooth" });
+      });
+      dots.appendChild(d);
+    }
+    updateBoardDots();
+  }
+
+  function updateBoardDots() {
+    const board = $("board");
+    const dots = $("boardDots");
+    if (!dots || !dots.children.length) return;
+    const kids = Array.from(board.children);
+    const x = board.scrollLeft + board.clientWidth / 2;
+    let active = 0;
+    kids.forEach((k, i) => { if (k.offsetLeft - board.offsetLeft <= x) active = i; });
+    Array.from(dots.children).forEach((d, i) => d.classList.toggle("active", i === active));
+  }
+
+  $("board").addEventListener("scroll", () => requestAnimationFrame(updateBoardDots), { passive: true });
 
   init();
 })();
