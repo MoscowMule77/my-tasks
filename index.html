@@ -79,14 +79,20 @@
       </div>
       <input type="text" id="searchInput" class="search" placeholder="🔍 Search tasks…" autocomplete="off">
       <span id="overdueBadge" class="overdue-badge hidden"></span>
-      <select id="sortSelect" class="sort-select" title="Sort tasks">
-        <option value="manual">Sort: Manual</option>
-        <option value="due">Sort: Due date</option>
-      </select>
-      <button class="manage-btn" id="manageBtn">Edit lists</button>
-      <button class="manage-btn" id="themeBtn">🎨 Theme</button>
-      <button class="manage-btn" id="calBtn">📤 Feed</button>
-      <button class="manage-btn" id="backupBtn">💾 Backup</button>
+      <!-- Everything occasional lives in the ⋯ menu -->
+      <div class="more-wrap">
+        <button class="manage-btn more-btn" id="moreBtn" title="More options">⋯</button>
+        <div class="more-menu hidden" id="moreMenu">
+          <select id="sortSelect" class="sort-select" title="Sort tasks">
+            <option value="manual">Sort: Manual</option>
+            <option value="due">Sort: Due date</option>
+          </select>
+          <button class="menu-item" id="manageBtn">✏️ Edit lists</button>
+          <button class="menu-item" id="themeBtn">🎨 Theme</button>
+          <button class="menu-item" id="calBtn">📤 Calendar feed</button>
+          <button class="menu-item" id="backupBtn">💾 Backup</button>
+        </div>
+      </div>
     </div>
 
     <!-- Backup / restore panel (hidden by default) -->

@@ -21,6 +21,7 @@
     const m = localStorage.getItem("mytasks-calmode"); if (m === "month" || m === "week" || m === "day") calMode = m;
   })();
   const dueEditing = new Set(); // task ids currently picking a due date
+  const freshDue = new Set();   // tasks created this session: show an empty due pill so a date can be set at capture
 
   const $ = (id) => document.getElementById(id);
 
@@ -557,6 +558,7 @@
       .from("todos").insert({ title, list_id: targetId, done: false, position: maxPos + 1 }).select().single();
     if (error) { console.error(error); alert("Could not add task: " + error.message); return; }
     tasks.push(data);
+    freshDue.add(data.id); // brand-new tasks show an empty due pill straight away
     render();
     // keep focus in the same column's input for fast entry
     const again = document.querySelector('.col-add input[data-list="' + listId + '"]');
@@ -744,6 +746,16 @@
     $("boardDrop").classList.remove("drop-target");
     const data = e.dataTransfer.getData("text/plain");
     if (data.startsWith("col:")) moveListToEnd(data.slice(4));
+  });
+
+  // "⋯" overflow menu: everything occasional lives here.
+  $("moreBtn").addEventListener("click", (e) => { e.stopPropagation(); $("moreMenu").classList.toggle("hidden"); });
+  document.addEventListener("click", (e) => {
+    const m = $("moreMenu");
+    if (m && !m.classList.contains("hidden") && !m.contains(e.target)) m.classList.add("hidden");
+  });
+  ["manageBtn", "themeBtn", "calBtn", "backupBtn"].forEach((id) => {
+    $(id).addEventListener("click", () => $("moreMenu").classList.add("hidden"));
   });
 
   $("manageBtn").addEventListener("click", () => { managing = !managing; render(); });
@@ -1265,11 +1277,8 @@
           titleClickTimer = setTimeout(() => { titleClickTimer = null; toggleNotes(); }, 220);
         });
         title.addEventListener("dblclick", () => { clearTimeout(titleClickTimer); titleClickTimer = null; editTitle(t, title); });
-        const del = document.createElement("button");
-        del.className = "del";
-        del.innerHTML = "✕";
-        del.title = "Delete";
-        del.addEventListener("click", () => deleteTask(t));
+        // Right-click (desktop shortcut): open this task's details.
+        card.addEventListener("contextmenu", (e) => { e.preventDefault(); toggleNotes(); });
         main.append(check, title);
         const subs = Array.isArray(t.subtasks) ? t.subtasks : [];
         if (subs.length) {
@@ -1286,7 +1295,6 @@
           dot.addEventListener("click", toggleNotes);
           main.appendChild(dot);
         }
-        main.appendChild(del);
         card.appendChild(main);
 
         // Details (subtasks + notes) shown when the card is expanded
@@ -1323,65 +1331,77 @@
           ta.addEventListener("mousedown", (e) => e.stopPropagation());
           ta.addEventListener("change", () => setNotes(t, ta.value));
           card.appendChild(ta);
+
+          // Action row — due date, reorder, move and delete all live in this details layer,
+          // keeping the card face down to checkbox + title (+ due pill when set).
+          const act = document.createElement("div");
+          act.className = "card-actions";
+          if (!t.due_date) {
+            const addDue = document.createElement("button");
+            addDue.className = "due-add"; addDue.textContent = "📅 Add due";
+            addDue.title = "Add a due date";
+            addDue.addEventListener("click", () => { dueEditing.add(t.id); render(); });
+            act.appendChild(addDue);
+          } else {
+            const clr = document.createElement("button");
+            clr.className = "due-clear"; clr.textContent = "✕ due date"; clr.title = "Remove due date";
+            clr.addEventListener("click", () => { dueEditing.delete(t.id); setDue(t, ""); });
+            act.appendChild(clr);
+          }
+          if (sortMode === "manual" && !searchQuery) {
+            const grp = colTasks.filter((x) => x.done === t.done);
+            const gi = grp.findIndex((x) => x.id === t.id);
+            const up = document.createElement("button");
+            up.className = "icon-btn"; up.innerHTML = "▲"; up.title = "Move up";
+            up.disabled = gi === 0;
+            up.addEventListener("click", () => moveTaskWithinList(t, -1));
+            const down = document.createElement("button");
+            down.className = "icon-btn"; down.innerHTML = "▼"; down.title = "Move down";
+            down.disabled = gi === grp.length - 1;
+            down.addEventListener("click", () => moveTaskWithinList(t, 1));
+            act.append(up, down);
+          }
+          if (boardLists().length > 1) {
+            const mv = document.createElement("select");
+            mv.className = "move-select";
+            mv.title = "Move to another list";
+            const ph = document.createElement("option");
+            ph.value = ""; ph.textContent = "Move to…";
+            mv.appendChild(ph);
+            boardLists().filter((x) => x.id !== l.id).forEach((x) => {
+              const o = document.createElement("option");
+              o.value = x.id; o.textContent = "→ " + x.name;
+              mv.appendChild(o);
+            });
+            mv.addEventListener("change", () => { if (mv.value) reassignTask(t, mv.value); });
+            act.appendChild(mv);
+          }
+          const delBtn = document.createElement("button");
+          delBtn.className = "act-del"; delBtn.textContent = "🗑 Delete";
+          delBtn.title = "Delete task";
+          delBtn.addEventListener("click", () => deleteTask(t));
+          act.appendChild(delBtn);
+          card.appendChild(act);
         }
 
-        // Footer: up/down reorder (manual sort only) + (when >1 list) a move-to menu.
-        const foot = document.createElement("div");
-        foot.className = "card-foot";
-        if (sortMode === "manual" && !searchQuery) {
-          const grp = colTasks.filter((x) => x.done === t.done);
-          const gi = grp.findIndex((x) => x.id === t.id);
-          const up = document.createElement("button");
-          up.className = "icon-btn"; up.innerHTML = "▲"; up.title = "Move up";
-          up.disabled = gi === 0;
-          up.addEventListener("click", () => moveTaskWithinList(t, -1));
-          const down = document.createElement("button");
-          down.className = "icon-btn"; down.innerHTML = "▼"; down.title = "Move down";
-          down.disabled = gi === grp.length - 1;
-          down.addEventListener("click", () => moveTaskWithinList(t, 1));
-          foot.append(up, down);
-        }
-
-        // Due date — hidden (n/a) until added; shows a small "Add due" button instead.
-        if (t.due_date || dueEditing.has(t.id)) {
+        // Card face: the due-date pill appears when a date is set, is being picked,
+        // or the task was just created (so a date can be added at capture time).
+        if (t.due_date || dueEditing.has(t.id) || freshDue.has(t.id)) {
+          const foot = document.createElement("div");
+          foot.className = "card-foot";
           const due = document.createElement("input");
           due.type = "date";
           due.className = "due-input" + (t.due_date ? " " + dueStatus(t.due_date) : "");
-          due.title = "Due date";
+          due.title = "Due date — tap to change";
           if (t.due_date) due.value = t.due_date;
+          due.addEventListener("mousedown", (e) => e.stopPropagation());
           due.addEventListener("change", () => { dueEditing.delete(t.id); setDue(t, due.value); });
           foot.appendChild(due);
-          const clr = document.createElement("button");
-          clr.className = "due-clear"; clr.innerHTML = "✕"; clr.title = "Remove due date";
-          clr.addEventListener("click", () => { dueEditing.delete(t.id); setDue(t, ""); });
-          foot.appendChild(clr);
           if (!t.due_date && dueEditing.has(t.id)) {
             setTimeout(() => { try { due.focus(); if (due.showPicker) due.showPicker(); } catch (e) { /* ignore */ } }, 0);
           }
-        } else {
-          const addDue = document.createElement("button");
-          addDue.className = "due-add"; addDue.textContent = "📅 Add due";
-          addDue.title = "Add a due date";
-          addDue.addEventListener("click", () => { dueEditing.add(t.id); render(); });
-          foot.appendChild(addDue);
+          card.appendChild(foot);
         }
-
-        if (boardLists().length > 1) {
-          const mv = document.createElement("select");
-          mv.className = "move-select";
-          mv.title = "Move to another list";
-          const ph = document.createElement("option");
-          ph.value = ""; ph.textContent = "Move to…";
-          mv.appendChild(ph);
-          boardLists().filter((x) => x.id !== l.id).forEach((x) => {
-            const o = document.createElement("option");
-            o.value = x.id; o.textContent = "→ " + x.name;
-            mv.appendChild(o);
-          });
-          mv.addEventListener("change", () => { if (mv.value) reassignTask(t, mv.value); });
-          foot.appendChild(mv);
-        }
-        card.appendChild(foot);
 
         cards.appendChild(card);
       });
