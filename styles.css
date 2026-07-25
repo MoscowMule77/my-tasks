@@ -377,6 +377,61 @@
     white-space: nowrap; overflow: hidden; max-height: 320px; text-overflow: ellipsis;
   }
 
+  /* ============== Phone layout (mobile-first pass) ============== */
+  @media (max-width: 700px) {
+    /* Respect the iPhone notch and home indicator */
+    .wrap {
+      padding: calc(14px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right))
+               calc(24px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
+    }
+
+    /* Tabs scroll sideways instead of wrapping */
+    .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { padding: 10px 16px; flex-shrink: 0; }
+
+    /* Toolbar: search gets its own full-width row, buttons get finger-sized */
+    .toolbar { gap: 8px; }
+    .search { flex: 1 1 100%; max-width: none; order: -1; padding: 11px 14px; font-size: 16px; }
+    .vt-btn, .manage-btn, .sort-select { padding: 9px 14px; }
+
+    /* One list per screen-width: columns stack full-width instead of squeezing */
+    .board { gap: 12px; }
+    .column {
+      flex: 1 1 100% !important;
+      width: 100% !important; min-width: 0 !important; max-width: 100% !important;
+      height: auto !important; max-height: none !important;
+    }
+    .col-resize { display: none; } /* drag-resize is a desktop tool */
+    .column.collapsed {
+      flex: 1 1 100% !important; width: 100% !important; min-width: 0 !important;
+      flex-direction: row; align-items: center; gap: 10px; padding: 12px 14px;
+    }
+    .col-collapsed-name { writing-mode: horizontal-tb; max-height: none; }
+    .col-collapsed-count { margin-bottom: 0; }
+
+    /* Bigger touch targets */
+    .check { width: 26px; height: 26px; }
+    .card .check { width: 24px; height: 24px; }
+    .sub-check { width: 20px; height: 20px; }
+    .card { padding: 12px 13px; gap: 9px; }
+    .card .title { font-size: 15px; }
+    .del { font-size: 20px; padding: 4px 8px; }
+    .icon-btn { font-size: 17px; padding: 6px 8px; }
+    .col-add input { padding: 12px 13px; font-size: 16px; }
+    .sub-add { font-size: 16px; }
+
+    /* Inputs at 16px so iOS doesn't auto-zoom when tapping them */
+    .auth-card input, .add-row input, .list-edit input, .new-list-row input, .notes { font-size: 16px; }
+
+    /* Calendar: tighter month cells on a narrow screen */
+    .cal-cell { min-height: 64px; padding: 4px; }
+    .cal-label { min-width: 0; font-size: 15px; }
+
+    /* Drag-a-list drop zone is a desktop affordance */
+    .board-drop { display: none; }
+  }
+
   .setup-banner {
     background: #fff7e6; border: 1px solid #ffe2a8; color: #8a6100;
     border-radius: 12px; padding: 14px 16px; font-size: 13px; margin-bottom: 18px;
