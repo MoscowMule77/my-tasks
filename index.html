@@ -91,6 +91,7 @@
           <button class="menu-item" id="themeBtn">🎨 Theme</button>
           <button class="menu-item" id="calBtn">📤 Calendar feed</button>
           <button class="menu-item" id="backupBtn">💾 Backup</button>
+          <button class="menu-item hidden" id="bioBtn">🔓 Face ID lock: Off</button>
         </div>
       </div>
     </div>
@@ -159,6 +160,15 @@
     <div class="cal-view hidden" id="calView"></div>
   </div>
 
+</div>
+
+<!-- Face ID lock screen (native app only) -->
+<div id="lockView" class="lock-view hidden">
+  <div class="lock-box">
+    <div class="lock-icon">🔒</div>
+    <h2>Sorted is locked</h2>
+    <button class="btn unlock-btn" id="unlockBtn">Unlock with Face ID</button>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

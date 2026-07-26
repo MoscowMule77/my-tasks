@@ -932,12 +932,113 @@
     } catch (e) { console.error(e); }
   }
 
+  // ============ Native app extras (iOS app only — no effect on the website) ============
+  const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  const NP = isNative && window.Capacitor.Plugins ? window.Capacitor.Plugins : {};
+
+  // --- Due-date reminders (local notifications, scheduled on the device) ---
+  function notifIdFor(taskId) {
+    let h = 0;
+    const s = String(taskId);
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return Math.abs(h) % 2147483646 + 1;
+  }
+
+  let remTimer = null;
+  function scheduleNativeReminders() {
+    if (!isNative || !NP.LocalNotifications || !user) return;
+    clearTimeout(remTimer);
+    remTimer = setTimeout(syncReminders, 3000);
+  }
+
+  async function syncReminders() {
+    try {
+      const LN = NP.LocalNotifications;
+      const perm = await LN.requestPermissions();
+      if (!perm || perm.display !== "granted") return;
+      // Clear whatever was scheduled, then schedule afresh from current tasks.
+      const pending = await LN.getPending();
+      if (pending && pending.notifications && pending.notifications.length) {
+        await LN.cancel({ notifications: pending.notifications.map((n) => ({ id: n.id })) });
+      }
+      const now = Date.now();
+      const notifications = tasks
+        .filter((t) => !t.done && t.due_date)
+        .map((t) => ({ t, at: new Date(t.due_date + "T09:00:00") }))
+        .filter((x) => x.at.getTime() > now)
+        .sort((a, b) => a.at - b.at)
+        .slice(0, 60) // iOS keeps at most 64 pending notifications per app
+        .map((x) => ({
+          id: notifIdFor(x.t.id),
+          title: "Due today",
+          body: x.t.title,
+          schedule: { at: x.at }
+        }));
+      if (notifications.length) await LN.schedule({ notifications });
+    } catch (e) { console.error("reminders:", e); }
+  }
+
+  // --- Face ID / Touch ID lock ---
+  const BIO_KEY = "sorted-biolock";
+  let hiddenAt = 0;
+
+  function bioEnabled() { return isNative && localStorage.getItem(BIO_KEY) === "1"; }
+
+  async function verifyBio(reason) {
+    await NP.NativeBiometric.verifyIdentity({ reason, title: reason });
+  }
+
+  async function tryUnlock() {
+    try {
+      await verifyBio("Unlock Sorted");
+      $("lockView").classList.add("hidden");
+    } catch (e) { /* stays locked — tap Unlock to retry */ }
+  }
+
+  function showLock() {
+    $("lockView").classList.remove("hidden");
+    tryUnlock();
+  }
+
+  function renderBioLabel() {
+    $("bioBtn").textContent = bioEnabled() ? "🔒 Face ID lock: On" : "🔓 Face ID lock: Off";
+  }
+
+  $("unlockBtn").addEventListener("click", tryUnlock);
+
+  (async function initBioLock() {
+    if (!isNative || !NP.NativeBiometric) return;
+    try {
+      const avail = await NP.NativeBiometric.isAvailable();
+      if (!avail || !avail.isAvailable) return;
+    } catch (e) { return; }
+    $("bioBtn").classList.remove("hidden");
+    renderBioLabel();
+    $("bioBtn").addEventListener("click", async () => {
+      if (bioEnabled()) {
+        localStorage.setItem(BIO_KEY, "0");
+      } else {
+        try { await verifyBio("Enable Face ID lock"); localStorage.setItem(BIO_KEY, "1"); }
+        catch (e) { return; } // didn't verify — leave it off
+      }
+      renderBioLabel();
+      $("moreMenu").classList.add("hidden");
+    });
+    if (bioEnabled()) showLock();
+    // Re-lock when returning to the app after more than a minute away.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
+      if (bioEnabled() && hiddenAt && Date.now() - hiddenAt > 60000) showLock();
+    });
+  })();
+
   // --- Render ---
   function render() {
     renderTabs();
     renderManagePanel();
     renderView();
     scheduleCalendarUpdate();
+    scheduleNativeReminders();
   }
 
   // --- Sorted Tabs (board tab row) ---

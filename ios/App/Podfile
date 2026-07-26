@@ -11,7 +11,8 @@ install! 'cocoapods', :disable_input_output_paths => true
 def capacitor_pods
   pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
   pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
-
+  pod 'CapacitorLocalNotifications', :path => '../../node_modules/@capacitor/local-notifications'
+  pod 'CapgoCapacitorNativeBiometric', :path => '../../node_modules/@capgo/capacitor-native-biometric'
 end
 
 target 'App' do
@@ -21,4 +22,11 @@ end
 
 post_install do |installer|
   assertDeploymentTarget(installer)
+  # Force every pod to our minimum iOS (the iOS 27 SDK rejects anything older),
+  # so this survives each `pod install` / `npx cap sync` from now on.
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+    end
+  end
 end
