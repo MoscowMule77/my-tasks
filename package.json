@@ -1,7 +1,7 @@
 {
   "name": "sorted",
   "version": "1.0.0",
-  "description": "Sorted — your tasks, sorted. Web app + iOS wrapper.",
+  "description": "Flit — your life in tabs. Web app + iOS wrapper.",
   "private": true,
   "scripts": {
     "build": "rm -rf www && mkdir -p www && cp index.html styles.css app.js manifest.json www/ && cp -R icons www/icons",

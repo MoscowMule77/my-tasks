@@ -758,6 +758,28 @@
     $(id).addEventListener("click", () => $("moreMenu").classList.add("hidden"));
   });
 
+  // Permanently delete the account and every piece of its data (required by
+  // Apple guideline 5.1.1(v), and plain good practice).
+  $("deleteAccountBtn").addEventListener("click", async () => {
+    $("moreMenu").classList.add("hidden");
+    const boardsN = boards.length, tasksN = tasks.length;
+    const typed = prompt(
+      "This permanently deletes your account and ALL data (" + boardsN + " board(s), " +
+      tasksN + " task(s)) — there is no undo.\n\nTip: download a Backup first if you want a copy.\n\n" +
+      'Type DELETE to confirm:'
+    );
+    if (typed !== "DELETE") return;
+    try {
+      try { if (user) await supa.storage.from("calendar").remove([user.id + ".ics"]); } catch (e) { /* best effort */ }
+      const { error } = await supa.rpc("delete_account");
+      if (error) { alert("Could not delete account: " + error.message); return; }
+      alert("Your account and all data have been deleted.");
+      await supa.auth.signOut();
+    } catch (e) {
+      alert("Could not delete account: " + e.message);
+    }
+  });
+
   $("manageBtn").addEventListener("click", () => { managing = !managing; render(); });
   $("themeBtn").addEventListener("click", () => {
     themeOpen = !themeOpen;
@@ -821,7 +843,7 @@
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "my-tasks-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    a.download = "flit-backup-" + new Date().toISOString().slice(0, 10) + ".json";
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     const n = $("backupNote");
@@ -901,7 +923,7 @@
     const ymd = (d) => d.replace(/-/g, "");
     const nextDay = (d) => { const dt = new Date(d + "T00:00:00"); dt.setDate(dt.getDate() + 1); return dt.toISOString().slice(0, 10).replace(/-/g, ""); };
     const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
-    const out = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//My Tasks//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:My Tasks", "NAME:My Tasks"];
+    const out = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Flit//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:Flit", "NAME:Flit"];
     tasks.filter((t) => t.due_date).forEach((t) => {
       out.push("BEGIN:VEVENT");
       out.push("UID:" + t.id + "@mytasks");
@@ -990,7 +1012,7 @@
 
   async function tryUnlock() {
     try {
-      await verifyBio("Unlock Sorted");
+      await verifyBio("Unlock Flit");
       $("lockView").classList.add("hidden");
     } catch (e) { /* stays locked — tap Unlock to retry */ }
   }

@@ -189,6 +189,8 @@
     font-size: 14px; color: var(--text); border-radius: 8px; cursor: pointer;
   }
   .menu-item:hover { background: var(--bg); color: var(--accent); }
+  .menu-danger { color: var(--danger); border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; margin-top: 4px; }
+  .menu-danger:hover { background: #fdeaec; color: var(--danger); }
 
   /* Card details action row (due / move / reorder / delete live here) */
   .card-actions {

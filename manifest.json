@@ -1,7 +1,7 @@
 {
-  "name": "Sorted",
-  "short_name": "Sorted",
-  "description": "Your tasks, sorted.",
+  "name": "Flit",
+  "short_name": "Flit",
+  "description": "Flit — your life in tabs.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

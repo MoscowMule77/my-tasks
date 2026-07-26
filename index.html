@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Sorted</title>
+<title>Flit</title>
 
 <!-- PWA: makes the app installable on your phone and Mac -->
 <link rel="manifest" href="manifest.json">
@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Sorted">
+<meta name="apple-mobile-web-app-title" content="Flit">
 
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -38,15 +38,15 @@
   </div>
 
   <header class="app hidden" id="appHeader">
-    <h1>Sorted</h1>
+    <h1>Flit</h1>
     <div class="who"><span id="whoEmail"></span><button class="link-btn" id="pwBtn">Password</button><button class="link-btn" id="logoutBtn">Sign out</button></div>
   </header>
 
   <!-- Auth view -->
   <div id="authView" class="hidden">
     <div class="auth-card">
-      <h2>Sorted</h2>
-      <p>Get sorted — sign in, or create an account to get started.</p>
+      <h2>Flit</h2>
+      <p>Your life in tabs — sign in, or create an account to get started.</p>
       <input type="email" id="emailInput" placeholder="you@example.com" autocomplete="email">
       <input type="password" id="passwordInput" placeholder="Password" autocomplete="current-password">
       <button class="btn" id="signInBtn">Sign in</button>
@@ -70,7 +70,7 @@
 
   <!-- App view -->
   <div id="appView" class="hidden">
-    <!-- Sorted Tabs: one tab per board (e.g. Personal, Work) -->
+    <!-- Flit tabs: one board per tab (e.g. Personal, Work) -->
     <div class="tabs" id="tabsRow"></div>
     <div class="toolbar">
       <div class="view-toggle">
@@ -92,6 +92,7 @@
           <button class="menu-item" id="calBtn">📤 Calendar feed</button>
           <button class="menu-item" id="backupBtn">💾 Backup</button>
           <button class="menu-item hidden" id="bioBtn">🔓 Face ID lock: Off</button>
+          <button class="menu-item menu-danger" id="deleteAccountBtn">Delete account…</button>
         </div>
       </div>
     </div>
@@ -166,7 +167,7 @@
 <div id="lockView" class="lock-view hidden">
   <div class="lock-box">
     <div class="lock-icon">🔒</div>
-    <h2>Sorted is locked</h2>
+    <h2>Flit is locked</h2>
     <button class="btn unlock-btn" id="unlockBtn">Unlock with Face ID</button>
   </div>
 </div>

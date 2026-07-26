@@ -1,6 +1,6 @@
 {
-  "appId": "now.sortedgroup.sorted",
-  "appName": "Sorted",
+  "appId": "now.sortedgroup.flit",
+  "appName": "Flit",
   "webDir": "www",
   "ios": {
     "contentInset": "automatic"
