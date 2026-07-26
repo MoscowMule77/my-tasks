@@ -4,7 +4,7 @@
   "description": "Flit — your life in tabs. Web app + iOS wrapper.",
   "private": true,
   "scripts": {
-    "build": "rm -rf www && mkdir -p www && cp index.html styles.css app.js manifest.json www/ && cp -R icons www/icons",
+    "build": "rm -rf www && mkdir -p www && cp index.html styles.css app.js manifest.json privacy.html terms.html www/ && cp -R icons www/icons",
     "ios": "npm run build && npx cap sync ios && npx cap open ios"
   },
   "dependencies": {
