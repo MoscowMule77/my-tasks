@@ -770,7 +770,7 @@
     );
     if (typed !== "DELETE") return;
     try {
-      try { if (user) await supa.storage.from("calendar").remove([user.id + ".ics"]); } catch (e) { /* best effort */ }
+      try { if (calToken) await supa.storage.from("calendar").remove([calToken + ".ics"]); } catch (e) { /* best effort */ }
       const { error } = await supa.rpc("delete_account");
       if (error) { alert("Could not delete account: " + error.message); return; }
       alert("Your account and all data have been deleted.");
@@ -792,11 +792,15 @@
     const open = panel.classList.contains("hidden");
     panel.classList.toggle("hidden", !open);
     if (open) {
-      $("calUrl").value = feedUrl();
       $("calNote").textContent = "";
-      updateCalendarFeed(); // make sure the feed file exists/refreshed
+      (async () => {
+        if (!calToken) await getCalToken(false);
+        $("calUrl").value = feedUrl();
+        updateCalendarFeed(); // make sure the feed file exists/refreshed
+      })();
     }
   });
+  $("calReset").addEventListener("click", resetCalendarLink);
   $("calCopy").addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(feedUrl()); $("calNote").textContent = "Link copied ✓"; $("calNote").className = "note ok"; }
     catch (e) { $("calUrl").select(); $("calNote").textContent = "Press Cmd+C to copy."; $("calNote").className = "note"; }
@@ -914,8 +918,19 @@
   }
 
   // --- Calendar (.ics) feed ---
+  // The feed lives at a secret, rotatable token — never the user id — so the link
+  // can be revoked if it ever leaks. Token comes from the calendar_token() function.
+  let calToken = null;
+
+  async function getCalToken(rotate) {
+    const { data, error } = await supa.rpc("calendar_token", { rotate: !!rotate });
+    if (error) { console.error("calendar token:", error); return null; }
+    calToken = data;
+    return calToken;
+  }
+
   function feedUrl() {
-    return user ? (SUPABASE_URL + "/storage/v1/object/public/calendar/" + user.id + ".ics") : "";
+    return calToken ? (SUPABASE_URL + "/storage/v1/object/public/calendar/" + calToken + ".ics") : "";
   }
 
   function buildICS() {
@@ -947,11 +962,26 @@
   async function updateCalendarFeed() {
     if (!user || !supa) return;
     try {
+      const t = calToken || await getCalToken(false);
+      if (!t) return;
       const blob = new Blob([buildICS()], { type: "text/calendar" });
       const { error } = await supa.storage.from("calendar")
-        .upload(user.id + ".ics", blob, { contentType: "text/calendar", upsert: true, cacheControl: "60" });
+        .upload(t + ".ics", blob, { contentType: "text/calendar", upsert: true, cacheControl: "60" });
       if (error) console.error("calendar upload:", error);
     } catch (e) { console.error(e); }
+  }
+
+  // Rotate the secret: old link dies immediately, a new one is issued.
+  async function resetCalendarLink() {
+    if (!confirm("Create a new calendar link?\n\nThe old link will stop working straight away — you'll need to re-subscribe in Apple Calendar with the new one.")) return;
+    const old = calToken;
+    const t = await getCalToken(true);
+    if (!t) { $("calNote").textContent = "Could not create a new link."; $("calNote").className = "note err"; return; }
+    if (old) { try { await supa.storage.from("calendar").remove([old + ".ics"]); } catch (e) { /* best effort */ } }
+    await updateCalendarFeed();
+    $("calUrl").value = feedUrl();
+    $("calNote").textContent = "New link created — the old one no longer works ✓";
+    $("calNote").className = "note ok";
   }
 
   // ============ Native app extras (iOS app only — no effect on the website) ============
