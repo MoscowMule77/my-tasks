@@ -23,3 +23,11 @@ www/
 # iOS native project — generated pieces we don't commit
 ios/App/Pods/
 ios/DerivedData/
+
+# Xcode archives and exported builds (large, regenerable)
+build/
+*.xcarchive
+
+# Signing keys — never commit
+*.p8
+private_keys/
