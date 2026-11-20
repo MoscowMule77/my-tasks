@@ -39,17 +39,20 @@
 
   <header class="app hidden" id="appHeader">
     <h1>Flit</h1>
-    <div class="who"><span id="whoEmail"></span><button class="link-btn" id="pwBtn">Password</button><button class="link-btn" id="logoutBtn">Sign out</button></div>
+    <div class="who"><span id="whoEmail"></span><button class="link-btn hidden" id="syncBtn">Sign in to sync</button><button class="link-btn" id="pwBtn">Password</button><button class="link-btn" id="logoutBtn">Sign out</button></div>
   </header>
 
   <!-- Auth view -->
   <div id="authView" class="hidden">
     <div class="auth-card">
       <h2>Flit</h2>
-      <p>Your life in tabs — sign in, or create an account to get started.</p>
+      <p>Your life in tabs. Start straight away, or sign in to sync across your devices.</p>
+      <button class="btn" id="guestBtn">Continue without an account</button>
+      <button class="btn hidden" id="authBackBtn">← Back to my tasks</button>
+      <div class="auth-or">or sign in to sync</div>
       <input type="email" id="emailInput" placeholder="you@example.com" autocomplete="email">
       <input type="password" id="passwordInput" placeholder="Password" autocomplete="current-password">
-      <button class="btn" id="signInBtn">Sign in</button>
+      <button class="btn btn-secondary" id="signInBtn">Sign in</button>
       <button class="link-btn" id="forgotBtn" style="margin-top:10px;">Forgot password?</button>
       <button class="link-btn" id="createBtn" style="margin-top:14px;">Create an account</button>
       <div class="note" id="authNote"></div>
@@ -91,6 +94,7 @@
             <option value="manual">Sort: Manual</option>
             <option value="due">Sort: Due date</option>
           </select>
+          <button class="menu-item hidden" id="syncMenuBtn">☁️ Sign in to sync</button>
           <button class="menu-item" id="manageBtn">✏️ Edit lists</button>
           <button class="menu-item" id="themeBtn">🎨 Theme</button>
           <button class="menu-item" id="calBtn">📤 Calendar feed</button>
@@ -114,7 +118,7 @@
         <input type="file" id="importFile" accept="application/json,.json" style="display:none;">
       </div>
       <div class="note" id="backupNote" style="margin-top:10px;"></div>
-      <p style="margin:10px 0 0;color:var(--muted);font-size:12px;">
+      <p id="restoreWarning" style="margin:10px 0 0;color:var(--muted);font-size:12px;">
         Restoring <strong>replaces</strong> everything currently in your account with the contents of the backup file.
       </p>
     </div>

@@ -1,6 +1,9 @@
 (function () {
   let supa = null;
   let user = null;
+  let guest = false;        // true while using Flit without an account (data stays on this device)
+  let showingAuth = false;  // true while a guest has the sign-in screen open
+  let migrating = false;    // true while on-device data is being copied into an account
   let tasks = [];
   let lists = [];           // [{id, name, board_id, ...}]
   let boards = [];          // [{id, name, position}] — the Sorted Tabs
@@ -111,6 +114,123 @@
 
   loadSavedTheme();
 
+  // --- On-device store (used when there is no account) ---
+  // Flit works without an account: boards, lists and tasks are then kept in this
+  // device's local storage. The store answers the same small set of queries the
+  // app sends to the server, so the rest of the code doesn't care which is in use.
+  const LOCAL_KEY = "flit-local-db";
+  const GUEST_KEY = "flit-guest"; // "1" = using Flit without an account; "paused" = signed in, device data kept
+  const localDb = (function () {
+    const DEFAULTS = {
+      boards: { position: null },
+      lists: { position: null, width: null, height: null, board_id: null },
+      todos: { done: false, notes: null, due_date: null, subtasks: [], position: null, list_id: null }
+    };
+    let seq = 0;
+    function read() {
+      try {
+        const d = JSON.parse(localStorage.getItem(LOCAL_KEY));
+        if (d && Array.isArray(d.boards) && Array.isArray(d.lists) && Array.isArray(d.todos)) return d;
+      } catch (e) { /* fall through to an empty store */ }
+      return { boards: [], lists: [], todos: [] };
+    }
+    function write(d) { localStorage.setItem(LOCAL_KEY, JSON.stringify(d)); }
+    function uid() {
+      if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+      return "l-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10) + "-" + (seq++);
+    }
+    // created_at must sort in insertion order even for rows added in the same millisecond.
+    function stamp() { return new Date().toISOString() + "#" + String(seq++).padStart(6, "0"); }
+
+    function Query(table) {
+      this.table = table; this.op = null; this.payload = null;
+      this.filters = []; this.orders = []; this.wantRows = false; this.one = false;
+    }
+    Query.prototype.select = function () { if (this.op) this.wantRows = true; else this.op = "select"; return this; };
+    Query.prototype.insert = function (p) { this.op = "insert"; this.payload = p; return this; };
+    Query.prototype.update = function (p) { this.op = "update"; this.payload = p; return this; };
+    Query.prototype.delete = function () { this.op = "delete"; return this; };
+    Query.prototype.eq = function (col, val) { this.filters.push((r) => r[col] === val); return this; };
+    Query.prototype.in = function (col, vals) { const s = new Set(vals); this.filters.push((r) => s.has(r[col])); return this; };
+    Query.prototype.order = function (col, opts) {
+      this.orders.push({ col, asc: !opts || opts.ascending !== false, nullsFirst: !!(opts && opts.nullsFirst) });
+      return this;
+    };
+    Query.prototype.single = function () { this.one = true; return this; };
+    Query.prototype.exec = function () {
+      const d = read();
+      const rows = d[this.table];
+      if (!rows) throw new Error("Unknown table: " + this.table);
+      const match = (r) => this.filters.every((f) => f(r));
+      const copy = (r) => JSON.parse(JSON.stringify(r));
+
+      if (this.op === "select") {
+        const out = rows.filter(match).map(copy);
+        const orders = this.orders;
+        out.sort((a, b) => {
+          for (const o of orders) {
+            const x = a[o.col], y = b[o.col];
+            const xn = x == null, yn = y == null;
+            if (xn && yn) continue;
+            if (xn) return o.nullsFirst ? -1 : 1;
+            if (yn) return o.nullsFirst ? 1 : -1;
+            if (x < y) return o.asc ? -1 : 1;
+            if (x > y) return o.asc ? 1 : -1;
+          }
+          return 0;
+        });
+        return this.one ? (out[0] || null) : out;
+      }
+
+      if (this.op === "insert") {
+        const list = Array.isArray(this.payload) ? this.payload : [this.payload];
+        const added = list.map((p) => Object.assign({ id: uid(), created_at: stamp() }, copy(DEFAULTS[this.table]), copy(p)));
+        added.forEach((r) => rows.push(r));
+        write(d);
+        if (!this.wantRows) return null;
+        return this.one ? copy(added[0]) : added.map(copy);
+      }
+
+      if (this.op === "update") {
+        rows.forEach((r) => { if (match(r)) Object.assign(r, copy(this.payload)); });
+        write(d);
+        return null;
+      }
+
+      if (this.op === "delete") {
+        const gone = new Set(rows.filter(match).map((r) => r.id));
+        d[this.table] = rows.filter((r) => !gone.has(r.id));
+        // Mirror the server's cascade: a board takes its lists, a list takes its tasks.
+        let goneLists = this.table === "lists" ? gone : new Set();
+        if (this.table === "boards") {
+          goneLists = new Set(d.lists.filter((l) => gone.has(l.board_id)).map((l) => l.id));
+          d.lists = d.lists.filter((l) => !goneLists.has(l.id));
+        }
+        if (goneLists.size) d.todos = d.todos.filter((t) => !goneLists.has(t.list_id));
+        write(d);
+        return null;
+      }
+
+      throw new Error("Unsupported query");
+    };
+    // Awaitable, like a server query: resolves to { data, error } and never rejects.
+    Query.prototype.then = function (resolve, reject) {
+      let result;
+      try { result = { data: this.exec(), error: null }; }
+      catch (e) { result = { data: null, error: { message: e && e.message ? e.message : String(e) } }; }
+      return Promise.resolve(result).then(resolve, reject);
+    };
+
+    return {
+      from: (table) => new Query(table),
+      dump: read,
+      clear: () => localStorage.removeItem(LOCAL_KEY)
+    };
+  })();
+
+  // Where data lives right now: this device (no account) or the server (signed in).
+  function db() { return guest ? localDb : supa; }
+
   // --- Check config ---
   const configured = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length > 20;
   if (!configured) {
@@ -123,12 +243,22 @@
     return;
   }
 
-  supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // The sign-in library is loaded from the network. If it could not load (no
+  // connection), Flit still works on this device; only signing in is unavailable.
+  supa = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
   // --- Auth ---
   let recovering = false; // true while the user is following a reset-password link
 
   async function init() {
+    if (!supa) {
+      // Offline at launch: no sign-in available, but Flit still works on this device.
+      ["signInBtn", "createBtn", "forgotBtn"].forEach((id) => { $(id).disabled = true; });
+      $("authNote").textContent = "You're offline, so sign-in isn't available right now. You can still use Flit on this device.";
+      $("authNote").className = "note";
+      setUser(null);
+      return;
+    }
     const { data } = await supa.auth.getSession();
     setUser(data.session ? data.session.user : null);
     supa.auth.onAuthStateChange((event, session) => {
@@ -139,20 +269,121 @@
     });
   }
 
+  function showApp() {
+    $("authView").classList.add("hidden");
+    $("pwView").classList.add("hidden");
+    $("appView").classList.remove("hidden");
+    $("appHeader").classList.remove("hidden");
+  }
+
+  function showAuth() {
+    $("authView").classList.remove("hidden");
+    $("pwView").classList.add("hidden");
+    $("appView").classList.add("hidden");
+    $("appHeader").classList.add("hidden");
+    // A guest who opened this screen can go straight back to their tasks.
+    $("authBackBtn").classList.toggle("hidden", !showingAuth);
+    $("guestBtn").classList.toggle("hidden", showingAuth);
+  }
+
+  // Show or hide the things that only make sense with (or without) an account.
+  function updateAccountUI() {
+    $("whoEmail").textContent = guest ? "On this device" : (user ? user.email : "");
+    $("pwBtn").classList.toggle("hidden", guest);
+    $("logoutBtn").classList.toggle("hidden", guest);
+    $("syncBtn").classList.toggle("hidden", !guest);
+    $("syncMenuBtn").classList.toggle("hidden", !guest);
+    $("calBtn").classList.toggle("hidden", guest); // the calendar feed is hosted, so it needs an account
+    if (guest) $("calPanel").classList.add("hidden");
+    $("deleteAccountBtn").textContent = guest ? "Delete all data…" : "Delete account…";
+    $("restoreWarning").innerHTML = "Restoring <strong>replaces</strong> everything currently " +
+      (guest ? "on this device" : "in your account") + " with the contents of the backup file.";
+  }
+
   function setUser(u) {
     user = u;
     if (user) {
-      $("authView").classList.add("hidden");
-      $("pwView").classList.add("hidden");
-      $("appView").classList.remove("hidden");
-      $("appHeader").classList.remove("hidden");
-      $("whoEmail").textContent = user.email;
-      loadAll();
+      guest = false;
+      showingAuth = false;
+      showApp();
+      updateAccountUI();
+      if (migrating) return; // loadAll runs when the copy finishes
+      if (localStorage.getItem(GUEST_KEY) === "1") {
+        migrating = true;
+        migrateLocalToAccount().finally(() => { migrating = false; loadAll(); });
+      } else {
+        loadAll();
+      }
+    } else if (localStorage.getItem(GUEST_KEY) === "1" && !showingAuth) {
+      enterGuest();
     } else {
-      $("authView").classList.remove("hidden");
-      $("pwView").classList.add("hidden");
-      $("appView").classList.add("hidden");
-      $("appHeader").classList.add("hidden");
+      guest = false;
+      showAuth();
+    }
+  }
+
+  // Use Flit without an account: everything is stored on this device.
+  function enterGuest() {
+    user = null;
+    guest = true;
+    showingAuth = false;
+    localStorage.setItem(GUEST_KEY, "1");
+    showApp();
+    updateAccountUI();
+    loadAll();
+  }
+
+  // A guest chose "Sign in to sync": show the sign-in screen, keeping their tasks safe on the device.
+  function showAuthFromGuest() {
+    $("moreMenu").classList.add("hidden");
+    showingAuth = true;
+    $("authNote").textContent = supa
+      ? "Sign in or create an account to sync your tasks across devices."
+      : "You're offline, so sign-in isn't available right now.";
+    $("authNote").className = "note";
+    showAuth();
+  }
+
+  // After a guest signs in, offer to copy what's on this device into the account.
+  async function migrateLocalToAccount() {
+    const d = localDb.dump();
+    if (!d.todos.length) { localDb.clear(); localStorage.removeItem(GUEST_KEY); return; }
+    const n = d.todos.length;
+    const ok = confirm(
+      "You have " + n + " task" + (n === 1 ? "" : "s") + " saved on this device.\n\n" +
+      "Copy " + (n === 1 ? "it" : "them") + " into your account?\n\n" +
+      "OK: copy into your account.\nCancel: leave " + (n === 1 ? "it" : "them") + " on this device only."
+    );
+    if (!ok) { localStorage.setItem(GUEST_KEY, "paused"); return; }
+    try {
+      const need = (res) => { if (res.error) throw new Error(res.error.message); return res.data; };
+      const existing = need(await supa.from("boards").select("*")) || [];
+      let pos = existing.reduce((m, b) => Math.max(m, b.position || 0), 0);
+      const byPos = (a, b) => (a.position || 0) - (b.position || 0);
+      const boardMap = {}, listMap = {};
+      for (const b of d.boards.slice().sort(byPos)) {
+        if (!d.lists.some((l) => l.board_id === b.id && d.todos.some((t) => t.list_id === l.id))) continue; // skip empty boards
+        const nb = need(await supa.from("boards").insert({ name: b.name, position: ++pos }).select().single());
+        boardMap[b.id] = nb.id;
+      }
+      for (const l of d.lists.slice().sort(byPos)) {
+        if (!boardMap[l.board_id]) continue;
+        const nl = need(await supa.from("lists").insert({
+          name: l.name, position: l.position, width: l.width, height: l.height, board_id: boardMap[l.board_id]
+        }).select().single());
+        listMap[l.id] = nl.id;
+      }
+      const rows = d.todos.filter((t) => listMap[t.list_id]).map((t) => ({
+        title: t.title, done: !!t.done, notes: t.notes || null, due_date: t.due_date || null,
+        subtasks: t.subtasks || [], position: t.position, list_id: listMap[t.list_id]
+      }));
+      if (rows.length) need(await supa.from("todos").insert(rows));
+      localDb.clear();
+      localStorage.removeItem(GUEST_KEY);
+    } catch (e) {
+      console.error("copy to account:", e);
+      localStorage.setItem(GUEST_KEY, "paused");
+      alert("Could not copy your on-device tasks into your account (" + e.message + ").\n\nThey are still saved on this device: sign out and choose \"Continue without an account\" to see them.");
     }
   }
 
@@ -238,7 +469,11 @@
   $("forgotBtn").addEventListener("click", doForgot);
   $("passwordInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doSignIn(); });
   $("emailInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("passwordInput").focus(); });
-  $("logoutBtn").addEventListener("click", async () => { await supa.auth.signOut(); });
+  $("logoutBtn").addEventListener("click", async () => { if (supa) await supa.auth.signOut(); });
+  $("guestBtn").addEventListener("click", enterGuest);
+  $("authBackBtn").addEventListener("click", enterGuest);
+  $("syncBtn").addEventListener("click", showAuthFromGuest);
+  $("syncMenuBtn").addEventListener("click", showAuthFromGuest);
   $("pwBtn").addEventListener("click", () => showPwView("change"));
   $("savePwBtn").addEventListener("click", savePassword);
   $("newPwInput").addEventListener("keydown", (e) => { if (e.key === "Enter") savePassword(); });
@@ -267,7 +502,7 @@
 
   // --- Boards (Sorted Tabs) ---
   async function loadBoards() {
-    const { data, error } = await supa
+    const { data, error } = await db()
       .from("boards").select("*")
       .order("position", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: true });
@@ -290,7 +525,7 @@
     const clean = (name || "").trim();
     if (!clean) return null;
     const maxPos = boards.reduce((m, b) => Math.max(m, b.position || 0), 0);
-    const { data, error } = await supa.from("boards").insert({ name: clean, position: maxPos + 1 }).select().single();
+    const { data, error } = await db().from("boards").insert({ name: clean, position: maxPos + 1 }).select().single();
     if (error) { console.error(error); if (!silent) alert("Could not add board: " + error.message); return null; }
     boards.push(data);
     if (!activeBoard) activeBoard = data.id;
@@ -310,7 +545,7 @@
     const b = boards.find((x) => x.id === id);
     if (b) b.name = clean;
     render();
-    const { error } = await supa.from("boards").update({ name: clean }).eq("id", id);
+    const { error } = await db().from("boards").update({ name: clean }).eq("id", id);
     if (error) { console.error(error); loadAll(); }
   }
 
@@ -332,12 +567,12 @@
       localStorage.setItem("mytasks-board", activeBoard);
     }
     render();
-    const { error } = await supa.from("boards").delete().eq("id", id);
+    const { error } = await db().from("boards").delete().eq("id", id);
     if (error) { console.error(error); loadAll(); }
   }
 
   async function loadLists() {
-    const { data, error } = await supa
+    const { data, error } = await db()
       .from("lists").select("*")
       .order("position", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: true });
@@ -346,7 +581,7 @@
   }
 
   async function loadTasks() {
-    const { data, error } = await supa
+    const { data, error } = await db()
       .from("todos").select("*")
       .order("position", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: true });
@@ -365,7 +600,7 @@
   function persistTaskOrder(listId, ordered) {
     ordered.forEach((t, i) => { t.position = i + 1; t.list_id = listId; });
     ordered.forEach((t) => {
-      supa.from("todos").update({ position: t.position, list_id: t.list_id }).eq("id", t.id)
+      db().from("todos").update({ position: t.position, list_id: t.list_id }).eq("id", t.id)
         .then(({ error }) => { if (error) console.error(error); });
     });
   }
@@ -375,7 +610,7 @@
     const clean = (name || "").trim();
     if (!clean) return;
     const maxPos = lists.reduce((m, l) => Math.max(m, l.position || 0), 0);
-    const { data, error } = await supa.from("lists").insert({ name: clean, position: maxPos + 1, board_id: activeBoard }).select().single();
+    const { data, error } = await db().from("lists").insert({ name: clean, position: maxPos + 1, board_id: activeBoard }).select().single();
     if (error) { console.error(error); if (!silent) alert("Could not add list: " + error.message); return; }
     lists.push(data);
     if (!silent) render();
@@ -402,7 +637,7 @@
   async function createListAfter(name, afterListId) {
     const idx = lists.findIndex((x) => x.id === afterListId);
     const after = lists[idx];
-    const { data, error } = await supa.from("lists").insert({ name, board_id: after ? after.board_id : activeBoard }).select().single();
+    const { data, error } = await db().from("lists").insert({ name, board_id: after ? after.board_id : activeBoard }).select().single();
     if (error) { console.error(error); alert("Could not add list: " + error.message); return null; }
     lists.splice(idx < 0 ? lists.length : idx + 1, 0, data);
     persistPositions();
@@ -413,7 +648,7 @@
   function persistPositions() {
     lists.forEach((l, i) => { l.position = i + 1; });
     lists.forEach((l) => {
-      supa.from("lists").update({ position: l.position }).eq("id", l.id)
+      db().from("lists").update({ position: l.position }).eq("id", l.id)
         .then(({ error }) => { if (error) console.error(error); });
     });
   }
@@ -433,7 +668,7 @@
   }
 
   function persistListSize(l) {
-    supa.from("lists").update({ width: l.width || null, height: l.height || null }).eq("id", l.id)
+    db().from("lists").update({ width: l.width || null, height: l.height || null }).eq("id", l.id)
       .then(({ error }) => { if (error) console.error(error); });
   }
 
@@ -503,7 +738,7 @@
     if (!clean) return;
     const l = lists.find((x) => x.id === id);
     if (l) l.name = clean;
-    const { error } = await supa.from("lists").update({ name: clean }).eq("id", id);
+    const { error } = await db().from("lists").update({ name: clean }).eq("id", id);
     if (error) { console.error(error); loadAll(); }
   }
 
@@ -518,7 +753,7 @@
     tasks = tasks.filter((t) => t.list_id !== id); // server cascade-deletes these
     if (activeFilter === id) activeFilter = "All";
     render();
-    const { error } = await supa.from("lists").delete().eq("id", id);
+    const { error } = await db().from("lists").delete().eq("id", id);
     if (error) { console.error(error); loadAll(); }
   }
 
@@ -539,11 +774,11 @@
     // Persist moved tasks first; only delete the list if they all saved (so nothing is lost).
     let failed = false;
     for (const t of moving) {
-      const { error } = await supa.from("todos").update({ list_id: intoId, position: t.position }).eq("id", t.id);
+      const { error } = await db().from("todos").update({ list_id: intoId, position: t.position }).eq("id", t.id);
       if (error) { console.error(error); failed = true; }
     }
     if (failed) { loadAll(); return; }
-    const { error } = await supa.from("lists").delete().eq("id", fromId);
+    const { error } = await db().from("lists").delete().eq("id", fromId);
     if (error) { console.error(error); loadAll(); }
   }
 
@@ -554,7 +789,7 @@
     inputEl.value = "";
     const targetId = await ensureRoom(listId); // spill into a new same-named list if this one is full
     const maxPos = tasks.filter((t) => t.list_id === targetId).reduce((m, t) => Math.max(m, t.position || 0), 0);
-    const { data, error } = await supa
+    const { data, error } = await db()
       .from("todos").insert({ title, list_id: targetId, done: false, position: maxPos + 1 }).select().single();
     if (error) { console.error(error); alert("Could not add task: " + error.message); return; }
     tasks.push(data);
@@ -601,14 +836,14 @@
     const newDone = !t.done;
     t.done = newDone;
     render();
-    const { error } = await supa.from("todos").update({ done: newDone }).eq("id", t.id);
+    const { error } = await db().from("todos").update({ done: newDone }).eq("id", t.id);
     if (error) { console.error(error); t.done = !newDone; render(); }
   }
 
   async function deleteTask(t) {
     tasks = tasks.filter((x) => x.id !== t.id);
     render();
-    const { error } = await supa.from("todos").delete().eq("id", t.id);
+    const { error } = await db().from("todos").delete().eq("id", t.id);
     if (error) { console.error(error); loadTasks(); }
   }
 
@@ -626,7 +861,7 @@
       const v = input.value.trim();
       if (v && v !== t.title) {
         t.title = v;
-        const { error } = await supa.from("todos").update({ title: v }).eq("id", t.id);
+        const { error } = await db().from("todos").update({ title: v }).eq("id", t.id);
         if (error) { console.error(error); loadTasks(); return; }
       }
       render();
@@ -650,7 +885,7 @@
     const due = value || null;
     t.due_date = due;
     render();
-    const { error } = await supa.from("todos").update({ due_date: due }).eq("id", t.id);
+    const { error } = await db().from("todos").update({ due_date: due }).eq("id", t.id);
     if (error) { console.error(error); loadTasks(); }
   }
 
@@ -662,7 +897,7 @@
     const ids = doneTasks.map((t) => t.id);
     tasks = tasks.filter((t) => !ids.includes(t.id));
     render();
-    const { error } = await supa.from("todos").delete().in("id", ids);
+    const { error } = await db().from("todos").delete().in("id", ids);
     if (error) { console.error(error); loadTasks(); }
   }
 
@@ -680,7 +915,7 @@
   async function setNotes(t, value) {
     const notes = value.trim() || null;
     t.notes = notes;
-    const { error } = await supa.from("todos").update({ notes }).eq("id", t.id);
+    const { error } = await db().from("todos").update({ notes }).eq("id", t.id);
     if (error) console.error(error);
   }
 
@@ -689,7 +924,7 @@
     return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + "-" + Math.random().toString(16).slice(2));
   }
   async function saveSubtasks(t) {
-    const { error } = await supa.from("todos").update({ subtasks: t.subtasks || [] }).eq("id", t.id);
+    const { error } = await db().from("todos").update({ subtasks: t.subtasks || [] }).eq("id", t.id);
     if (error) console.error(error);
   }
   function addSubtask(t, title) {
@@ -763,6 +998,21 @@
   $("deleteAccountBtn").addEventListener("click", async () => {
     $("moreMenu").classList.add("hidden");
     const boardsN = boards.length, tasksN = tasks.length;
+    if (guest) {
+      // No account: wipe everything Flit has stored on this device.
+      const typedLocal = prompt(
+        "This permanently deletes ALL Flit data on this device (" + boardsN + " board(s), " +
+        tasksN + " task(s)) — there is no undo.\n\nTip: download a Backup first if you want a copy.\n\n" +
+        'Type DELETE to confirm:'
+      );
+      if (typedLocal !== "DELETE") return;
+      localDb.clear();
+      localStorage.removeItem(GUEST_KEY);
+      boards = []; lists = []; tasks = []; activeBoard = null;
+      alert("All Flit data on this device has been deleted.");
+      setUser(null);
+      return;
+    }
     const typed = prompt(
       "This permanently deletes your account and ALL data (" + boardsN + " board(s), " +
       tasksN + " task(s)) — there is no undo.\n\nTip: download a Backup first if you want a copy.\n\n" +
@@ -871,19 +1121,19 @@
     // 1. Remove current boards (lists and tasks cascade-delete with them)
     const currentBoardIds = boards.map((b) => b.id);
     if (currentBoardIds.length) {
-      const { error } = await supa.from("boards").delete().in("id", currentBoardIds);
+      const { error } = await db().from("boards").delete().in("id", currentBoardIds);
       if (error) { n.textContent = "Restore failed: " + error.message; n.className = "note err"; return; }
     }
     // Also remove any stray lists not attached to a board (from very old data).
     const strayIds = lists.filter((l) => !l.board_id).map((l) => l.id);
-    if (strayIds.length) await supa.from("lists").delete().in("id", strayIds);
+    if (strayIds.length) await db().from("lists").delete().in("id", strayIds);
 
     // 2. Recreate boards (old backups without boards get a single "Personal" board)
     const boardMap = {};
     const backupBoards = Array.isArray(data.boards) && data.boards.length
       ? data.boards : [{ id: "__default__", name: "Personal", position: 1 }];
     for (const b of backupBoards) {
-      const { data: nb, error } = await supa.from("boards")
+      const { data: nb, error } = await db().from("boards")
         .insert({ name: b.name, position: b.position }).select().single();
       if (error) { n.textContent = "Restore failed: " + error.message; n.className = "note err"; return; }
       boardMap[b.id] = nb.id;
@@ -893,7 +1143,7 @@
     // 3. Recreate lists, mapping old ids -> new ids
     const idMap = {};
     for (const l of data.lists) {
-      const { data: nl, error } = await supa.from("lists")
+      const { data: nl, error } = await db().from("lists")
         .insert({
           name: l.name, position: l.position, width: l.width, height: l.height,
           board_id: boardMap[l.board_id] || defaultBoardId
@@ -909,7 +1159,7 @@
       }))
       .filter((r) => r.list_id);
     if (rows.length) {
-      const { error } = await supa.from("todos").insert(rows);
+      const { error } = await db().from("todos").insert(rows);
       if (error) { n.textContent = "Restore failed: " + error.message; n.className = "note err"; return; }
     }
     await loadAll();
@@ -998,7 +1248,7 @@
 
   let remTimer = null;
   function scheduleNativeReminders() {
-    if (!isNative || !NP.LocalNotifications || !user) return;
+    if (!isNative || !NP.LocalNotifications || !(user || guest)) return;
     clearTimeout(remTimer);
     remTimer = setTimeout(syncReminders, 3000);
   }
